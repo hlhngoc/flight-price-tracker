@@ -1,0 +1,29 @@
+{
+  "indexes": [
+    {
+      "collectionGroup": "price_history",
+      "queryScope": "COLLECTION",
+      "fields": [
+        { "fieldPath": "route_id", "order": "ASCENDING" },
+        { "fieldPath": "checked_at", "order": "DESCENDING" }
+      ]
+    },
+    {
+      "collectionGroup": "price_history",
+      "queryScope": "COLLECTION",
+      "fields": [
+        { "fieldPath": "route_id", "order": "ASCENDING" },
+        { "fieldPath": "checked_at", "order": "ASCENDING" }
+      ]
+    },
+    {
+      "collectionGroup": "preferred_routes",
+      "queryScope": "COLLECTION",
+      "fields": [
+        { "fieldPath": "status", "order": "ASCENDING" },
+        { "fieldPath": "event_id", "order": "ASCENDING" }
+      ]
+    }
+  ],
+  "fieldOverrides": []
+}

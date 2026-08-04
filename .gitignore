@@ -3,5 +3,12 @@
 __pycache__/
 *.pyc
 .venv/
+*firebase-adminsdk*.json
 flight-price-tracker-architecture*.md
 flight-price-tracker-architecture(1)*.md
+
+# web (Next.js)
+web/node_modules/
+web/.next/
+web/.env.local
+web/next-env.d.ts
