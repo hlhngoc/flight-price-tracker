@@ -5,7 +5,7 @@ emails are formatted straight from price numbers plus (for event-linked
 routes) the ai_reasoning text saved once when the route was created.
 """
 import smtplib
-from datetime import date
+from datetime import date, datetime
 from email.message import EmailMessage
 
 from . import config
@@ -34,12 +34,25 @@ def send_email(subject: str, body: str) -> None:
 
 # ------------------------------------------------------------- templates --
 
+def _format_departure_time(departure_time: str | None) -> str | None:
+    """departure_time is "YYYY-MM-DD HH:MM", as returned by SerpApi."""
+    if not departure_time:
+        return None
+    try:
+        return datetime.strptime(departure_time, "%Y-%m-%d %H:%M").strftime("%H:%M")
+    except ValueError:
+        return None
+
+
 def _format_options_lines(options: list[dict]) -> list[str]:
     header = "Giá rẻ nhất hiện tại (2 hãng khác nhau):" if len(options) > 1 else "Giá rẻ nhất hiện tại:"
-    return [header] + [
-        f"  - {o['airline']}: {o['price']:,}đ"
-        for o in sorted(options, key=lambda o: o["price"])
-    ]
+    lines = [header]
+    for o in sorted(options, key=lambda o: o["price"]):
+        dep = _format_departure_time(o.get("departure_time"))
+        dep_part = f", giờ bay {dep}" if dep else ""
+        note = "" if o.get("matched_preferred_window", True) else " — ngoài khung giờ mong muốn"
+        lines.append(f"  - {o['airline']}: {o['price']:,}đ{dep_part}{note}")
+    return lines
 
 
 def format_price_decrease(origin: str, destination: str, current_options: list[dict], last_price: int,

@@ -8,7 +8,7 @@ from typing import Optional
 
 import requests
 
-from . import config
+from . import config, time_windows
 
 SERPAPI_URL = "https://serpapi.com/search"
 
@@ -74,14 +74,7 @@ def search_flights(origin: str, destination: str, flight_date: date) -> list[Fli
     return _parse_flights(payload)
 
 
-def cheapest_distinct_airlines(options: list[FlightOption], max_results: int = 2) -> list[FlightOption]:
-    """Returns up to `max_results` options, price-ascending, each from a
-    different airline: the overall cheapest first, then the cheapest option
-    from a distinct airline, and so on. Which airlines come out "cheapest"
-    is not fixed — it's whatever SerpApi returns lowest on a given check, so
-    this can vary from one check to the next. If the response only has one
-    distinct airline, returns a single-element list rather than erroring.
-    """
+def _pick_distinct_airlines(options: list[FlightOption], max_results: int) -> list[FlightOption]:
     picked: list[FlightOption] = []
     seen_airlines: set[str] = set()
     for opt in sorted(options, key=lambda o: o.price):
@@ -92,3 +85,35 @@ def cheapest_distinct_airlines(options: list[FlightOption], max_results: int = 2
         if len(picked) >= max_results:
             break
     return picked
+
+
+def cheapest_distinct_airlines(
+    options: list[FlightOption],
+    preferred_window: Optional[tuple[int, int]] = None,
+    max_results: int = 2,
+) -> tuple[list[FlightOption], bool]:
+    """Returns (picked_options, matched_preferred_window).
+
+    picked_options holds up to `max_results` options, price-ascending, each
+    from a different airline. Which airlines come out cheapest isn't fixed
+    — it's whatever SerpApi returns lowest on a given check, so this can
+    vary from one check to the next. A single-airline response yields a
+    single-element list rather than erroring.
+
+    If `preferred_window` (start_hour, end_hour) is given, options are
+    first filtered to those departing inside it, and the selection above
+    runs on that filtered set instead — matched_preferred_window is True.
+    If nothing departs inside the window at this check, falls back to the
+    full unfiltered list and matched_preferred_window is False, so callers
+    can flag that this result doesn't reflect the route's actual
+    preference. With no preferred_window, behaves exactly as before and
+    matched_preferred_window is always True.
+    """
+    if preferred_window is None:
+        return _pick_distinct_airlines(options, max_results), True
+
+    in_window = [o for o in options if time_windows.is_within_window(o.departure_time, preferred_window)]
+    if in_window:
+        return _pick_distinct_airlines(in_window, max_results), True
+
+    return _pick_distinct_airlines(options, max_results), False

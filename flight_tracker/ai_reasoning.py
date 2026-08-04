@@ -11,7 +11,7 @@ from datetime import date
 
 import requests
 
-from . import config, timeutils
+from . import config, time_windows, timeutils
 
 MAX_TOKENS = 4096
 MAX_SLOTS_PER_EVENT = 5
@@ -22,8 +22,13 @@ giờ), có tính đến buffer thời gian an toàn trước sự kiện (trán
 delay) và trade-off ở thêm đêm nếu bay sớm hơn để có giá tốt hơn. Ngày bay phải nằm
 trong khoảng từ (ngày sự kiện - độ linh hoạt) đến ngày sự kiện.
 
+"preferred_time_window" của mỗi slot PHẢI là đúng một trong các giá trị sau
+(không tự bịa giá trị khác) — chọn khung giờ phù hợp nhất để có đủ buffer an
+toàn trước sự kiện:
+{window_presets}
+
 Chỉ trả về JSON theo đúng schema sau, không thêm text nào khác:
-{{"slots": [{{"flight_date": "YYYY-MM-DD", "preferred_time_window": "mô tả ngắn khung giờ",
+{{"slots": [{{"flight_date": "YYYY-MM-DD", "preferred_time_window": "<một trong các giá trị ở trên>",
 "reasoning": "lý do ngắn gọn chọn slot này"}}]}}"""
 
 
@@ -70,7 +75,8 @@ Thời gian sự kiện: {event_datetime_vn.isoformat(sep=' ')}
 Điểm đi: {event['origin']}
 Độ linh hoạt: {flexibility_days} ngày trước sự kiện"""
 
-    system = SYSTEM_PROMPT.format(max_slots=MAX_SLOTS_PER_EVENT)
+    window_presets = "\n".join(f"- {w}" for w in time_windows.TIME_WINDOW_PRESETS)
+    system = SYSTEM_PROMPT.format(max_slots=MAX_SLOTS_PER_EVENT, window_presets=window_presets)
 
     try:
         raw = _call_gemini(system, user_prompt)

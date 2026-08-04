@@ -14,7 +14,8 @@ export async function createRoutesAroundDate(
   destination: string,
   targetDateIso: string, // "YYYY-MM-DD"
   rangeBefore: number = DEFAULT_RANGE_DAYS,
-  rangeAfter: number = DEFAULT_RANGE_DAYS
+  rangeAfter: number = DEFAULT_RANGE_DAYS,
+  preferredTimeWindow?: string | null
 ): Promise<string[]> {
   if (rangeBefore < 0 || rangeAfter < 0) {
     throw new Error("rangeBefore/rangeAfter must be >= 0");
@@ -28,7 +29,12 @@ export async function createRoutesAroundDate(
   const createdRouteIds: string[] = [];
   for (let offsetDays = -rangeBefore; offsetDays <= rangeAfter; offsetDays++) {
     const flightDate = toIsoDate(new Date(target.getTime() + offsetDays * 86400000));
-    const { id, created } = await addRouteIfNew({ origin, destination, flight_date: flightDate });
+    const { id, created } = await addRouteIfNew({
+      origin,
+      destination,
+      flight_date: flightDate,
+      preferred_time_window: preferredTimeWindow,
+    });
     if (created) createdRouteIds.push(id);
   }
 

@@ -7,7 +7,7 @@ route when it was created.
 """
 from datetime import date, datetime, timedelta, timezone
 
-from . import db, email_sender, pricing, serpapi_client, timeutils
+from . import db, email_sender, pricing, serpapi_client, time_windows, timeutils
 
 
 def _target_date(route) -> date:
@@ -39,11 +39,18 @@ def _cheapest_per_check(history_rows: list[dict]) -> list[int]:
 def check_route(route) -> None:
     target_date = _target_date(route)
     options = serpapi_client.search_flights(route["origin"], route["destination"], target_date)
-    best_options = serpapi_client.cheapest_distinct_airlines(options)
+    preferred_window = time_windows.parse_time_window(route["preferred_time_window"])
+    best_options, matched_preferred_window = serpapi_client.cheapest_distinct_airlines(
+        options, preferred_window=preferred_window,
+    )
     if not best_options:
         print(f"[route {route['id']}] no flights found for "
               f"{route['origin']}->{route['destination']} on {timeutils.format_dmy(target_date)}")
         return
+
+    if preferred_window is not None and not matched_preferred_window:
+        print(f"[route {route['id']}] no flights within preferred window "
+              f"'{route['preferred_time_window']}' — falling back to cheapest overall")
 
     checked_at = timeutils.now_utc_iso()
     last_price_row = db.get_last_price(route["id"], before_checked_at=checked_at)
@@ -56,6 +63,7 @@ def check_route(route) -> None:
             price=opt.price,
             airline=opt.airline,
             checked_at=checked_at,
+            matched_preferred_window=matched_preferred_window,
         )
     current_price = min(opt.price for opt in best_options)
 
@@ -76,7 +84,15 @@ def check_route(route) -> None:
     event_name = event["event_name"] if event else None
     days_to_event = _days_to_event(event) if event else None
 
-    current_options = [{"price": opt.price, "airline": opt.airline} for opt in best_options]
+    current_options = [
+        {
+            "price": opt.price,
+            "airline": opt.airline,
+            "departure_time": opt.departure_time,
+            "matched_preferred_window": matched_preferred_window,
+        }
+        for opt in best_options
+    ]
 
     if change == "decrease":
         new_low = pricing.is_new_low(current_price, history_prices)

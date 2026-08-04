@@ -163,7 +163,8 @@ label {
 }
 
 input,
-textarea {
+textarea,
+select {
   font: inherit;
   color: var(--fg);
   background: var(--card);
@@ -175,6 +176,24 @@ textarea {
 .error {
   color: var(--danger);
   font-size: 13px;
+}
+
+.subtext {
+  color: var(--muted);
+  font-size: 12px;
+  margin-top: 2px;
+}
+
+.window-warning {
+  color: #b45309;
+  font-size: 12px;
+  white-space: nowrap;
+}
+
+@media (prefers-color-scheme: dark) {
+  .window-warning {
+    color: #fbbf24;
+  }
 }
 
 .result-card {

@@ -6,7 +6,8 @@ Examples:
     python -m flight_tracker.cli add-route --origin HAN --destination SGN --target-date 20-09-2026
 
     python -m flight_tracker.cli add-route --origin HAN --destination SGN \
-        --target-date 20-09-2026 --range-before 2 --range-after 6
+        --target-date 20-09-2026 --range-before 2 --range-after 6 \
+        --time-window "Chiều (12:00-18:00)"
 
     # Legacy: a single rolling "today + N days" route instead of a fixed date
     python -m flight_tracker.cli add-route --origin HAN --destination SGN --offset-days 30
@@ -24,7 +25,7 @@ Examples:
 import argparse
 from datetime import datetime, timedelta
 
-from . import db, event_suggestion, route_range, route_tracking, timeutils
+from . import db, event_suggestion, route_range, route_tracking, time_windows, timeutils
 
 
 def cmd_add_route(args) -> None:
@@ -36,6 +37,7 @@ def cmd_add_route(args) -> None:
         route_ids = route_range.create_routes_around_date(
             origin, destination, target_date,
             range_before=args.range_before, range_after=args.range_after,
+            preferred_time_window=args.time_window,
         )
         window_desc = (f"{timeutils.format_dmy(target_date - timedelta(days=args.range_before))}"
                         f" .. {timeutils.format_dmy(target_date + timedelta(days=args.range_after))}")
@@ -55,6 +57,7 @@ def cmd_add_route(args) -> None:
         destination=destination,
         target_date_offset_days=args.offset_days,
         event_id=args.event_id,
+        preferred_time_window=args.time_window,
     )
     print(f"Added route #{route_id}: {origin} -> {destination} "
           f"(legacy mode: today+{args.offset_days}d, rolling)")
@@ -64,8 +67,9 @@ def cmd_list_routes(_args) -> None:
     for r in db.list_routes():
         date_info = timeutils.format_dmy(r["flight_date"]) if r["flight_date"] \
             else f"today+{r['target_date_offset_days']}d"
+        window_info = f" time_window={r['preferred_time_window']}" if r["preferred_time_window"] else ""
         print(f"#{r['id']}: {r['origin']} -> {r['destination']} on {date_info} "
-              f"[{r['status']}] event_id={r['event_id']}")
+              f"[{r['status']}] event_id={r['event_id']}{window_info}")
 
 
 def cmd_check_routes(_args) -> None:
@@ -123,6 +127,10 @@ def build_parser() -> argparse.ArgumentParser:
     p.add_argument("--offset-days", type=int, default=30,
                     help="Legacy: a single rolling today+N days route, used only if "
                          "--target-date is not given (default: 30)")
+    p.add_argument("--time-window", default=None, choices=time_windows.TIME_WINDOW_PRESETS,
+                    help="Optional preferred departure time-of-day — when set, price checks "
+                         "prefer flights inside this window and fall back to cheapest-overall "
+                         "only if none are available")
     p.add_argument("--event-id", type=str, default=None)
     p.set_defaults(func=cmd_add_route)
 

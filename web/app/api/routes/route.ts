@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { resolveAirportCode } from "@/lib/airports";
 import { createRoutesAroundDate, DEFAULT_RANGE_DAYS } from "@/lib/dateRange";
 import { addRoute, listRoutes } from "@/lib/firestore";
+import { TIME_WINDOW_PRESETS } from "@/lib/timeWindows";
 
 export const runtime = "nodejs";
 
@@ -17,6 +18,7 @@ interface RouteRequestBody {
   rangeBefore?: number;
   rangeAfter?: number;
   offsetDays?: number; // legacy: single rolling today+N days route
+  timeWindow?: string; // optional, must be one of TIME_WINDOW_PRESETS
 }
 
 export async function POST(req: NextRequest) {
@@ -40,6 +42,11 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({ error: (err as Error).message }, { status: 400 });
   }
 
+  if (body.timeWindow && !TIME_WINDOW_PRESETS.includes(body.timeWindow)) {
+    return NextResponse.json({ error: "Khung giờ mong muốn không hợp lệ." }, { status: 400 });
+  }
+  const timeWindow = body.timeWindow || null;
+
   if (body.targetDate) {
     if (!/^\d{4}-\d{2}-\d{2}$/.test(body.targetDate)) {
       return NextResponse.json({ error: "Ngày dự kiến bay không hợp lệ." }, { status: 400 });
@@ -50,7 +57,9 @@ export async function POST(req: NextRequest) {
       return NextResponse.json({ error: "Số ngày track trước/sau phải >= 0." }, { status: 400 });
     }
 
-    const routeIds = await createRoutesAroundDate(originCode, destCode, body.targetDate, rangeBefore, rangeAfter);
+    const routeIds = await createRoutesAroundDate(
+      originCode, destCode, body.targetDate, rangeBefore, rangeAfter, timeWindow,
+    );
     return NextResponse.json({ routeIds }, { status: 201 });
   }
 
@@ -59,6 +68,7 @@ export async function POST(req: NextRequest) {
     origin: originCode,
     destination: destCode,
     target_date_offset_days: body.offsetDays ?? 30,
+    preferred_time_window: timeWindow,
   });
 
   return NextResponse.json({ id: routeId }, { status: 201 });

@@ -36,6 +36,9 @@ export interface PriceRecord {
   price: number;
   airline: string | null;
   checked_at: string;
+  // Undefined on records written before this field existed — treat as "no
+  // preference to violate" the same way the dashboard/email do (no warning).
+  matched_preferred_window?: boolean;
 }
 
 export interface EventSlot {

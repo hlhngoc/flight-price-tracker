@@ -2,20 +2,27 @@
 // called exactly once, when an event is created via /api/events — the
 // resulting slots get inserted as tracked routes and are never re-scored
 // by the AI again (see route_tracking.py on the Python side).
+import { TIME_WINDOW_PRESETS } from "./timeWindows";
 import type { EventDoc, EventSlot } from "./types";
 
 const MAX_TOKENS = 4096;
 export const MAX_SLOTS_PER_EVENT = 5;
 
 function systemPrompt(maxSlots: number): string {
+  const windowPresets = TIME_WINDOW_PRESETS.map((w) => `- ${w}`).join("\n");
   return `Bạn là trợ lý chọn lịch bay cho một sự kiện. Dựa trên thông tin
 sự kiện, hãy chọn ra tối đa ${maxSlots} slot bay ứng viên hợp lý (ngày bay + khung
 giờ), có tính đến buffer thời gian an toàn trước sự kiện (tránh bay sát giờ, rủi ro
 delay) và trade-off ở thêm đêm nếu bay sớm hơn để có giá tốt hơn. Ngày bay phải nằm
 trong khoảng từ (ngày sự kiện - độ linh hoạt) đến ngày sự kiện.
 
+"preferred_time_window" của mỗi slot PHẢI là đúng một trong các giá trị sau
+(không tự bịa giá trị khác) — chọn khung giờ phù hợp nhất để có đủ buffer an
+toàn trước sự kiện:
+${windowPresets}
+
 Chỉ trả về JSON theo đúng schema sau, không thêm text nào khác:
-{"slots": [{"flight_date": "YYYY-MM-DD", "preferred_time_window": "mô tả ngắn khung giờ",
+{"slots": [{"flight_date": "YYYY-MM-DD", "preferred_time_window": "<một trong các giá trị ở trên>",
 "reasoning": "lý do ngắn gọn chọn slot này"}]}`;
 }
 

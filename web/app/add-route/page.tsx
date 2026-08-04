@@ -3,6 +3,7 @@
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useState, type FormEvent } from "react";
+import { TIME_WINDOW_PRESETS } from "@/lib/timeWindows";
 
 const DEFAULT_RANGE_DAYS = 4;
 
@@ -13,6 +14,7 @@ export default function AddRoutePage() {
   const [targetDate, setTargetDate] = useState("");
   const [rangeBefore, setRangeBefore] = useState(DEFAULT_RANGE_DAYS);
   const [rangeAfter, setRangeAfter] = useState(DEFAULT_RANGE_DAYS);
+  const [timeWindow, setTimeWindow] = useState("");
   const [error, setError] = useState<string | null>(null);
   const [submitting, setSubmitting] = useState(false);
 
@@ -24,7 +26,14 @@ export default function AddRoutePage() {
       const resp = await fetch("/api/routes", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ origin, destination, targetDate, rangeBefore, rangeAfter }),
+        body: JSON.stringify({
+          origin,
+          destination,
+          targetDate,
+          rangeBefore,
+          rangeAfter,
+          timeWindow: timeWindow || undefined,
+        }),
       });
       const data = await resp.json();
       if (!resp.ok) {
@@ -86,6 +95,17 @@ export default function AddRoutePage() {
             />
           </label>
         </div>
+        <label>
+          Khung giờ mong muốn (tùy chọn)
+          <select value={timeWindow} onChange={(e) => setTimeWindow(e.target.value)}>
+            <option value="">Không ưu tiên — giá rẻ nhất bất kể giờ nào</option>
+            {TIME_WINDOW_PRESETS.map((w) => (
+              <option key={w} value={w}>
+                {w}
+              </option>
+            ))}
+          </select>
+        </label>
         {error && <p className="error">{error}</p>}
         <button type="submit" disabled={submitting}>
           {submitting ? "Đang thêm..." : "Thêm route"}

@@ -163,7 +163,13 @@ def list_events() -> list[dict]:
 # --------------------------------------------------------- price_history --
 
 def add_price_record(route_id: str, flight_date: str, departure_time: Optional[str],
-                      price: int, airline: Optional[str], checked_at: str) -> str:
+                      price: int, airline: Optional[str], checked_at: str,
+                      matched_preferred_window: bool) -> str:
+    """matched_preferred_window: True if this result's departure_time falls
+    inside the route's preferred_time_window (or the route has none set —
+    trivially satisfied); False if it's a fallback shown despite not
+    matching the route's stated preference (see route_tracking.py).
+    """
     doc_ref = db().collection(PRICE_HISTORY).document()
     doc_ref.set({
         "route_id": route_id,
@@ -172,6 +178,7 @@ def add_price_record(route_id: str, flight_date: str, departure_time: Optional[s
         "price": price,
         "airline": airline,
         "checked_at": checked_at,
+        "matched_preferred_window": matched_preferred_window,
     })
     return doc_ref.id
 

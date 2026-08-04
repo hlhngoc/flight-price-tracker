@@ -1,7 +1,7 @@
 import Link from "next/link";
-import { formatDmy } from "@/lib/dateFormat";
+import { formatDmy, formatTime } from "@/lib/dateFormat";
 import { getLatestPricesForRoute, listEvents, listRoutes } from "@/lib/firestore";
-import type { EventDoc, RouteDoc } from "@/lib/types";
+import type { EventDoc, PriceRecord, RouteDoc } from "@/lib/types";
 import MarkBookedButton from "./components/MarkBookedButton";
 
 export const dynamic = "force-dynamic";
@@ -34,6 +34,31 @@ function compareRoutesForDisplay(a: RouteDoc, b: RouteDoc, eventsById: Map<strin
   }
 
   return effectiveSortDate(a).localeCompare(effectiveSortDate(b));
+}
+
+function ChangCell({ route }: { route: RouteDoc }) {
+  return (
+    <>
+      {route.origin} → {route.destination}
+      {route.preferred_time_window && (
+        <div className="subtext">Mong muốn: {route.preferred_time_window}</div>
+      )}
+    </>
+  );
+}
+
+function PriceRow({ price }: { price: PriceRecord }) {
+  const isFallback = price.matched_preferred_window === false;
+  return (
+    <td>
+      {formatTime(price.departure_time)}
+      {isFallback && (
+        <div className="window-warning" title="Không có chuyến trong khung giờ mong muốn">
+          ⚠ ngoài khung giờ mong muốn
+        </div>
+      )}
+    </td>
+  );
 }
 
 export default async function DashboardPage() {
@@ -72,8 +97,8 @@ export default async function DashboardPage() {
             <tr>
               <th>Chặng</th>
               <th>Ngày bay</th>
-              <th>Khung giờ</th>
-              <th>Giá rẻ nhất (2 hãng)</th>
+              <th>Khung giờ (giờ bay)</th>
+              <th>Giá / Hãng</th>
               <th>Sự kiện</th>
               <th>Trạng thái</th>
               <th></th>
@@ -83,30 +108,51 @@ export default async function DashboardPage() {
             {sortedRoutes.map((r) => {
               const event = r.event_id ? eventsById.get(r.event_id) : undefined;
               const prices = pricesByRouteId.get(r.id) ?? [];
-              return (
-                <tr key={r.id}>
+              const rowCount = Math.max(prices.length, 1);
+              const dateCell = r.flight_date ? formatDmy(r.flight_date) : `hôm nay+${r.target_date_offset_days}d`;
+              const statusCell = <span className={`status status-${r.status}`}>{r.status}</span>;
+              const actionCell = r.status === "tracking" && <MarkBookedButton routeId={r.id} />;
+
+              if (prices.length === 0) {
+                return (
+                  <tr key={r.id}>
+                    <td>
+                      <ChangCell route={r} />
+                    </td>
+                    <td>{dateCell}</td>
+                    <td>-</td>
+                    <td>-</td>
+                    <td>{event ? event.event_name : "-"}</td>
+                    <td>{statusCell}</td>
+                    <td>{actionCell}</td>
+                  </tr>
+                );
+              }
+
+              return prices.map((p, i) => (
+                <tr key={p.id}>
+                  {i === 0 && (
+                    <>
+                      <td rowSpan={rowCount}>
+                        <ChangCell route={r} />
+                      </td>
+                      <td rowSpan={rowCount}>{dateCell}</td>
+                    </>
+                  )}
+                  <PriceRow price={p} />
                   <td>
-                    {r.origin} → {r.destination}
+                    {formatPrice(p.price)}
+                    {p.airline ? ` — ${p.airline}` : ""}
                   </td>
-                  <td>{r.flight_date ? formatDmy(r.flight_date) : `hôm nay+${r.target_date_offset_days}d`}</td>
-                  <td>{r.preferred_time_window ?? "-"}</td>
-                  <td>
-                    {prices.length === 0
-                      ? "-"
-                      : prices.map((p) => (
-                          <div key={p.id}>
-                            {formatPrice(p.price)}
-                            {p.airline ? ` — ${p.airline}` : ""}
-                          </div>
-                        ))}
-                  </td>
-                  <td>{event ? event.event_name : "-"}</td>
-                  <td>
-                    <span className={`status status-${r.status}`}>{r.status}</span>
-                  </td>
-                  <td>{r.status === "tracking" && <MarkBookedButton routeId={r.id} />}</td>
+                  {i === 0 && (
+                    <>
+                      <td rowSpan={rowCount}>{event ? event.event_name : "-"}</td>
+                      <td rowSpan={rowCount}>{statusCell}</td>
+                      <td rowSpan={rowCount}>{actionCell}</td>
+                    </>
+                  )}
                 </tr>
-              );
+              ));
             })}
           </tbody>
         </table>

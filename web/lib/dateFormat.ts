@@ -7,3 +7,11 @@ export function formatDmy(isoDate: string | null | undefined): string {
   if (!y || !m || !d) return isoDate;
   return `${d}/${m}/${y}`;
 }
+
+// departureTime is "YYYY-MM-DD HH:MM" (as returned by SerpApi) — extract
+// just the trailing "HH:MM" for display.
+export function formatTime(departureTime: string | null | undefined): string {
+  if (!departureTime) return "-";
+  const match = departureTime.match(/(\d{2}):(\d{2})$/);
+  return match ? `${match[1]}:${match[2]}` : "-";
+}
