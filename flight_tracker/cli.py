@@ -72,8 +72,9 @@ def cmd_list_routes(_args) -> None:
               f"[{r['status']}] event_id={r['event_id']}{window_info}")
 
 
-def cmd_check_routes(_args) -> None:
-    route_tracking.run()
+def cmd_check_routes(args) -> None:
+    route_ids = args.route_ids.split(",") if args.route_ids else None
+    route_tracking.run(route_ids=route_ids)
 
 
 def cmd_mark_booked(args) -> None:
@@ -99,6 +100,11 @@ def cmd_add_event(args) -> None:
     print(f"Added event #{event_id}: {args.name} @ {event_dt}")
     if route_ids:
         print(f"AI created {len(route_ids)} tracked route(s): {route_ids}")
+        print("Checking prices for these routes now...")
+        try:
+            route_tracking.run(route_ids=route_ids)
+        except Exception as exc:  # routes are already created either way
+            print(f"Immediate price check failed (routes were still created): {exc}")
     else:
         print("No new routes created (AI returned nothing usable, or all slots were duplicates).")
 
@@ -135,7 +141,11 @@ def build_parser() -> argparse.ArgumentParser:
     p.set_defaults(func=cmd_add_route)
 
     sub.add_parser("list-routes").set_defaults(func=cmd_list_routes)
-    sub.add_parser("check-routes", help="Run the cron price-check flow now").set_defaults(func=cmd_check_routes)
+
+    p = sub.add_parser("check-routes", help="Run the cron price-check flow now")
+    p.add_argument("--route-ids", default=None,
+                    help="Comma-separated route ids to check (default: every 'tracking' route)")
+    p.set_defaults(func=cmd_check_routes)
 
     p = sub.add_parser("mark-booked", help="Stop tracking a route once you've bought the ticket")
     p.add_argument("--route-id", type=str, required=True)

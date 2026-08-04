@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { resolveAirportCode } from "@/lib/airports";
 import { AIReasoningError, generateEventSlots } from "@/lib/gemini";
 import { addEvent, addRoute, findMatchingRoute, getEvent } from "@/lib/firestore";
+import { triggerPriceCheckWorkflow } from "@/lib/githubActions";
 
 export const runtime = "nodejs";
 
@@ -88,6 +89,10 @@ export async function POST(req: NextRequest) {
       ai_reasoning: slot.reasoning,
     });
   }
+
+  // Fire-and-forget: kick off an immediate, scoped price check for the
+  // routes just created instead of waiting for the next scheduled cron run.
+  await triggerPriceCheckWorkflow(createdRoutes.map((r) => r.id));
 
   return NextResponse.json({ eventId, createdRoutes }, { status: 201 });
 }

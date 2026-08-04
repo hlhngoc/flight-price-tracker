@@ -51,7 +51,7 @@ In your repo: **Settings → Secrets and variables → Actions**, add these **se
 
 Optionally add a repo **variable** `GEMINI_MODEL` if you want something other than the default `gemini-3.6-flash`.
 
-The workflow (`.github/workflows/price-check.yml`) is already scheduled for 08:00 and 19:00 Asia/Ho_Chi_Minh. You can also trigger it manually from the Actions tab (`workflow_dispatch`).
+The workflow (`.github/workflows/price-check.yml`) is already scheduled for 08:00 and 19:00 Asia/Ho_Chi_Minh. You can also trigger it manually from the Actions tab (`workflow_dispatch`), optionally scoped to specific route IDs.
 
 ## 6. Vercel (the dashboard)
 
@@ -66,8 +66,19 @@ The workflow (`.github/workflows/price-check.yml`) is already scheduled for 08:0
 | `FIREBASE_SERVICE_ACCOUNT_JSON` | same JSON as above |
 | `APP_PASSWORD` | a password you choose — gates the whole dashboard |
 | `SESSION_SECRET` | a random string, e.g. output of `openssl rand -hex 32` |
+| `GH_REPO` | your repo as `owner/repo`, e.g. `hlhngoc/flight-price-tracker` — optional, see below |
+| `GH_DISPATCH_TOKEN` | a GitHub PAT — optional, see below |
+| `GH_REF` | branch to run the workflow on, e.g. `main` — optional, defaults to `main` |
 
 4. Deploy. Visit the URL, log in with `APP_PASSWORD`.
+
+### Immediate price check when adding an event (optional)
+
+Without `GH_REPO`/`GH_DISPATCH_TOKEN` set, routes created from an event just sit there until the next scheduled cron run (up to ~12h) — nothing breaks, they're still tracked. Set these two to make `/api/events` kick off an immediate check (via `workflow_dispatch`, scoped to just the newly created routes) right after Gemini picks the slots:
+
+1. GitHub → **Settings → Developer settings → Personal access tokens → Fine-grained tokens → Generate new token**.
+2. Repository access: only this repo. Permissions: **Actions → Read and write**.
+3. Copy the token into `GH_DISPATCH_TOKEN`; set `GH_REPO` to `owner/repo`.
 
 The dashboard's write endpoints (`/api/events`, `/api/routes`) call Gemini and will call SerpApi indirectly (via routes the cron job then tracks), so keep `APP_PASSWORD` private — anyone with it can create events/routes and consume your API quotas.
 

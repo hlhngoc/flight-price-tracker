@@ -113,12 +113,22 @@ def check_route(route) -> None:
     db.log_notification(route["id"], notif_type, timeutils.now_utc_iso(), body)
 
 
-def run() -> None:
+def run(route_ids: list[str] | None = None) -> None:
+    """With route_ids given, only checks those specific routes (skipping any
+    that aren't 'tracking') — used for an immediate check right after
+    add-event creates new routes, so it doesn't burn SerpApi quota
+    re-checking every other active route too. Without it, checks everything
+    'tracking' — the normal cron behavior.
+    """
     expired_count = db.expire_due_event_routes(timeutils.now_utc_iso())
     if expired_count:
         print(f"Expired {expired_count} route(s) whose linked event has passed.")
 
-    routes = db.list_active_routes()
+    if route_ids is not None:
+        routes = [r for r in (db.get_route(rid) for rid in route_ids) if r is not None and r["status"] == "tracking"]
+    else:
+        routes = db.list_active_routes()
+
     if not routes:
         print("No active ('tracking') routes to check.")
         return
