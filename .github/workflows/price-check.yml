@@ -1,0 +1,49 @@
+name: Route price check
+
+on:
+  schedule:
+    # 08:00 and 19:00 Asia/Ho_Chi_Minh (UTC+7) = 01:00 and 12:00 UTC
+    - cron: "0 1 * * *"
+    - cron: "0 12 * * *"
+  workflow_dispatch: {}
+
+permissions:
+  contents: write
+
+jobs:
+  check-prices:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - run: pip install -r requirements.txt
+
+      - name: Run route price check
+        env:
+          SERPAPI_KEY: ${{ secrets.SERPAPI_KEY }}
+          DEEPSEEK_API_KEY: ${{ secrets.DEEPSEEK_API_KEY }}
+          DEEPSEEK_MODEL: ${{ vars.DEEPSEEK_MODEL }}
+          SMTP_HOST: ${{ secrets.SMTP_HOST }}
+          SMTP_PORT: ${{ secrets.SMTP_PORT }}
+          SMTP_USER: ${{ secrets.SMTP_USER }}
+          SMTP_PASSWORD: ${{ secrets.SMTP_PASSWORD }}
+          EMAIL_FROM: ${{ secrets.EMAIL_FROM }}
+          EMAIL_TO: ${{ secrets.EMAIL_TO }}
+          DB_PATH: flight_tracker.db
+        run: |
+          python -m flight_tracker.cli init-db
+          python -m flight_tracker.cli check-routes
+
+      # SQLite lives in the repo — GitHub Actions has no persistent storage
+      # between runs, so price_history has to be committed back each time.
+      - name: Commit updated DB
+        run: |
+          git config user.name "flight-tracker-bot"
+          git config user.email "actions@users.noreply.github.com"
+          git add flight_tracker.db
+          git diff --cached --quiet || git commit -m "Update price history [skip ci]"
+          git push
