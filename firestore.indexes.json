@@ -1,29 +1,84 @@
 {
   "indexes": [
     {
-      "collectionGroup": "price_history",
-      "queryScope": "COLLECTION",
-      "fields": [
-        { "fieldPath": "route_id", "order": "ASCENDING" },
-        { "fieldPath": "checked_at", "order": "DESCENDING" },
-        { "fieldPath": "price", "order": "ASCENDING" }
-      ]
-    },
-    {
-      "collectionGroup": "price_history",
-      "queryScope": "COLLECTION",
-      "fields": [
-        { "fieldPath": "route_id", "order": "ASCENDING" },
-        { "fieldPath": "checked_at", "order": "ASCENDING" }
-      ]
-    },
-    {
       "collectionGroup": "preferred_routes",
       "queryScope": "COLLECTION",
       "fields": [
-        { "fieldPath": "status", "order": "ASCENDING" },
-        { "fieldPath": "event_id", "order": "ASCENDING" }
-      ]
+        {
+          "fieldPath": "status",
+          "order": "ASCENDING"
+        },
+        {
+          "fieldPath": "event_id",
+          "order": "ASCENDING"
+        },
+        {
+          "fieldPath": "__name__",
+          "order": "ASCENDING"
+        }
+      ],
+      "density": "SPARSE_ALL"
+    },
+    {
+      "collectionGroup": "price_history",
+      "queryScope": "COLLECTION",
+      "fields": [
+        {
+          "fieldPath": "route_id",
+          "order": "ASCENDING"
+        },
+        {
+          "fieldPath": "checked_at",
+          "order": "ASCENDING"
+        },
+        {
+          "fieldPath": "__name__",
+          "order": "ASCENDING"
+        }
+      ],
+      "density": "SPARSE_ALL"
+    },
+    {
+      "collectionGroup": "price_history",
+      "queryScope": "COLLECTION",
+      "fields": [
+        {
+          "fieldPath": "route_id",
+          "order": "ASCENDING"
+        },
+        {
+          "fieldPath": "checked_at",
+          "order": "DESCENDING"
+        },
+        {
+          "fieldPath": "__name__",
+          "order": "DESCENDING"
+        }
+      ],
+      "density": "SPARSE_ALL"
+    },
+    {
+      "collectionGroup": "price_history",
+      "queryScope": "COLLECTION",
+      "fields": [
+        {
+          "fieldPath": "route_id",
+          "order": "ASCENDING"
+        },
+        {
+          "fieldPath": "checked_at",
+          "order": "DESCENDING"
+        },
+        {
+          "fieldPath": "price",
+          "order": "ASCENDING"
+        },
+        {
+          "fieldPath": "__name__",
+          "order": "ASCENDING"
+        }
+      ],
+      "density": "SPARSE_ALL"
     }
   ],
   "fieldOverrides": []
