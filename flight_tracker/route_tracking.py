@@ -7,11 +7,7 @@ route when it was created.
 """
 from datetime import date, datetime, timedelta, timezone
 
-from . import db, email_sender, pricing, serpapi_client
-
-
-def _now_iso() -> str:
-    return datetime.now(timezone.utc).isoformat()
+from . import db, email_sender, pricing, serpapi_client, timeutils
 
 
 def _target_date(route) -> date:
@@ -20,9 +16,9 @@ def _target_date(route) -> date:
     return date.today() + timedelta(days=route["target_date_offset_days"])
 
 
-def _days_to_event(event, today: date) -> int:
-    event_date = date.fromisoformat(str(event["event_datetime"])[:10])
-    return (event_date - today).days
+def _days_to_event(event) -> int:
+    event_date_vn = timeutils.utc_iso_to_vn_date(event["event_datetime"])
+    return (event_date_vn - timeutils.vn_today()).days
 
 
 def check_route(route) -> None:
@@ -31,10 +27,10 @@ def check_route(route) -> None:
     best = serpapi_client.cheapest(options)
     if best is None:
         print(f"[route {route['id']}] no flights found for "
-              f"{route['origin']}->{route['destination']} on {target_date}")
+              f"{route['origin']}->{route['destination']} on {timeutils.format_dmy(target_date)}")
         return
 
-    checked_at = _now_iso()
+    checked_at = timeutils.now_utc_iso()
     last_price_row = db.get_last_price(route["id"], before_checked_at=checked_at)
 
     db.add_price_record(
@@ -61,7 +57,7 @@ def check_route(route) -> None:
 
     event = db.get_event(route["event_id"]) if route["event_id"] else None
     event_name = event["event_name"] if event else None
-    days_to_event = _days_to_event(event, date.today()) if event else None
+    days_to_event = _days_to_event(event) if event else None
 
     if change == "decrease":
         new_low = pricing.is_new_low(best.price, history_prices)
@@ -79,11 +75,11 @@ def check_route(route) -> None:
         notif_type = "price_increase"
 
     email_sender.send_email(subject, body)
-    db.log_notification(route["id"], notif_type, _now_iso(), body)
+    db.log_notification(route["id"], notif_type, timeutils.now_utc_iso(), body)
 
 
 def run() -> None:
-    expired_count = db.expire_due_event_routes(_now_iso())
+    expired_count = db.expire_due_event_routes(timeutils.now_utc_iso())
     if expired_count:
         print(f"Expired {expired_count} route(s) whose linked event has passed.")
 

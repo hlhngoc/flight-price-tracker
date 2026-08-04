@@ -2,6 +2,7 @@
 don't need a given credential (e.g. `add-route` doesn't need SMTP) don't
 fail just because that credential isn't set.
 """
+import json
 import os
 from pathlib import Path
 
@@ -23,24 +24,29 @@ def _require(name: str) -> str:
     return value
 
 
-def db_path() -> str:
-    return os.environ.get("DB_PATH", str(REPO_ROOT / "flight_tracker.db"))
+def firebase_service_account() -> dict:
+    """Full service-account JSON key content, pasted as one env var — see
+    SETUP.md. Using the whole JSON (rather than splitting into separate
+    project_id/client_email/private_key vars) avoids the private key's
+    embedded newlines getting mangled by env var storage.
+    """
+    raw = _require("FIREBASE_SERVICE_ACCOUNT_JSON")
+    try:
+        return json.loads(raw)
+    except json.JSONDecodeError as exc:
+        raise MissingConfig(f"FIREBASE_SERVICE_ACCOUNT_JSON is not valid JSON: {exc}") from exc
 
 
 def serpapi_key() -> str:
     return _require("SERPAPI_KEY")
 
 
-def deepseek_key() -> str:
-    return _require("DEEPSEEK_API_KEY")
+def gemini_api_key() -> str:
+    return _require("GEMINI_API_KEY")
 
 
-def deepseek_model() -> str:
-    return os.environ.get("DEEPSEEK_MODEL", "deepseek-chat")
-
-
-def deepseek_base_url() -> str:
-    return os.environ.get("DEEPSEEK_BASE_URL", "https://api.deepseek.com")
+def gemini_model() -> str:
+    return os.environ.get("GEMINI_MODEL", "gemini-3.6-flash")
 
 
 def smtp_config() -> dict:

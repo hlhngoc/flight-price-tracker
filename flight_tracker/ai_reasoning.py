@@ -1,4 +1,4 @@
-"""DeepSeek-based reasoning layer.
+"""Gemini-based reasoning layer.
 
 Per architecture v2, the AI is called exactly ONCE per event, at creation
 time: it picks candidate flight-date slots (with a short reason each), those
@@ -7,13 +7,13 @@ are formatted straight from stored data + the reasoning saved here — no
 further AI calls, even when price changes.
 """
 import json
-from datetime import date, datetime
+from datetime import date
 
 import requests
 
-from . import config
+from . import config, timeutils
 
-MAX_TOKENS = 1024
+MAX_TOKENS = 4096
 MAX_SLOTS_PER_EVENT = 5
 
 SYSTEM_PROMPT = """Bạn là trợ lý chọn lịch bay cho một sự kiện. Dựa trên thông tin
@@ -31,25 +31,25 @@ class AIReasoningError(RuntimeError):
     pass
 
 
-def _call_deepseek(system: str, user_prompt: str) -> str:
+def _call_gemini(system: str, user_prompt: str) -> str:
+    url = f"https://generativelanguage.googleapis.com/v1beta/models/{config.gemini_model()}:generateContent"
     resp = requests.post(
-        f"{config.deepseek_base_url()}/chat/completions",
-        headers={"Authorization": f"Bearer {config.deepseek_key()}"},
+        url,
+        params={"key": config.gemini_api_key()},
         json={
-            "model": config.deepseek_model(),
-            "max_tokens": MAX_TOKENS,
-            "temperature": 0.3,
-            "response_format": {"type": "json_object"},
-            "messages": [
-                {"role": "system", "content": system},
-                {"role": "user", "content": user_prompt},
-            ],
+            "systemInstruction": {"parts": [{"text": system}]},
+            "contents": [{"role": "user", "parts": [{"text": user_prompt}]}],
+            "generationConfig": {
+                "temperature": 0.3,
+                "maxOutputTokens": MAX_TOKENS,
+                "responseMimeType": "application/json",
+            },
         },
         timeout=60,
     )
     resp.raise_for_status()
     payload = resp.json()
-    return payload["choices"][0]["message"]["content"]
+    return payload["candidates"][0]["content"]["parts"][0]["text"]
 
 
 def generate_event_slots(event: dict) -> list[dict]:
@@ -57,15 +57,15 @@ def generate_event_slots(event: dict) -> list[dict]:
     preferred_time_window (str), reasoning (str). Invalid/out-of-range
     entries returned by the model are dropped.
     """
-    event_datetime = event["event_datetime"]
-    if isinstance(event_datetime, str):
-        event_datetime = datetime.fromisoformat(event_datetime.replace(" ", "T"))
-    event_date = event_datetime.date()
+    # event_datetime is stored as a UTC-aware ISO string; slot dates and the
+    # "days before the event" reasoning are inherently about VN local time.
+    event_datetime_vn = timeutils.utc_iso_to_vn_datetime(event["event_datetime"])
+    event_date = event_datetime_vn.date()
     flexibility_days = event["flexibility_days"]
     earliest = event_date.toordinal() - flexibility_days
 
     user_prompt = f"""Tên sự kiện: {event['event_name']}
-Thời gian sự kiện: {event_datetime.isoformat(sep=' ')}
+Thời gian sự kiện: {event_datetime_vn.isoformat(sep=' ')}
 Địa điểm: {event['location']}
 Điểm đi: {event['origin']}
 Độ linh hoạt: {flexibility_days} ngày trước sự kiện"""
@@ -73,11 +73,11 @@ Thời gian sự kiện: {event_datetime.isoformat(sep=' ')}
     system = SYSTEM_PROMPT.format(max_slots=MAX_SLOTS_PER_EVENT)
 
     try:
-        raw = _call_deepseek(system, user_prompt)
+        raw = _call_gemini(system, user_prompt)
         parsed = json.loads(raw)
         raw_slots = parsed["slots"]
-    except (requests.RequestException, KeyError, json.JSONDecodeError) as exc:
-        raise AIReasoningError(f"DeepSeek call/parse failed: {exc}") from exc
+    except (requests.RequestException, KeyError, IndexError, json.JSONDecodeError) as exc:
+        raise AIReasoningError(f"Gemini call/parse failed: {exc}") from exc
 
     slots: list[dict] = []
     for item in raw_slots:

@@ -1,86 +1,114 @@
-"""SQLite access layer. One connection per call — this is a low-frequency
-cron/CLI tool, not a server, so pooling would be pure overhead.
+"""Firestore access layer (replaces the old SQLite layer, per architecture
+v3). One Firestore client, lazily initialized and shared across calls.
+Every read returns a plain dict with an 'id' key merged in, so callers
+don't have to deal with DocumentSnapshot objects — route_tracking.py,
+event_suggestion.py and cli.py mostly kept working unchanged (except that
+IDs are now strings, not ints).
+
+IMPORTANT: collection/field names here must stay in sync with
+web/lib/firestore.ts — the GitHub Actions cron job (this file) and the
+Next.js app both read/write the same Firestore collections.
 """
-import sqlite3
-from contextlib import contextmanager
-from pathlib import Path
 from typing import Optional
 
-from . import config
+import firebase_admin
+from firebase_admin import credentials, firestore
+from google.cloud.firestore_v1.base_query import FieldFilter
 
-SCHEMA_PATH = Path(__file__).resolve().parent.parent / "schema.sql"
+from . import config, timeutils
 
+EVENTS = "events"
+ROUTES = "preferred_routes"
+PRICE_HISTORY = "price_history"
+NOTIFICATIONS_LOG = "notifications_log"
 
-@contextmanager
-def get_connection():
-    conn = sqlite3.connect(config.db_path())
-    conn.row_factory = sqlite3.Row
-    conn.execute("PRAGMA foreign_keys = ON")
-    try:
-        yield conn
-        conn.commit()
-    finally:
-        conn.close()
+_client: Optional[firestore.Client] = None
 
 
-def init_db() -> None:
-    with get_connection() as conn:
-        conn.executescript(SCHEMA_PATH.read_text())
+def db() -> firestore.Client:
+    global _client
+    if _client is None:
+        if not firebase_admin._apps:
+            cred = credentials.Certificate(config.firebase_service_account())
+            firebase_admin.initialize_app(cred)
+        _client = firestore.client()
+    return _client
+
+
+def _doc_to_dict(doc) -> Optional[dict]:
+    if doc is None or not doc.exists:
+        return None
+    data = doc.to_dict()
+    data["id"] = doc.id
+    return data
 
 
 # ---------------------------------------------------------------- routes --
 
 def add_route(origin: str, destination: str, target_date_offset_days: int = 30,
               flight_date: Optional[str] = None, preferred_time_window: Optional[str] = None,
-              event_id: Optional[int] = None, ai_reasoning: Optional[str] = None) -> int:
-    with get_connection() as conn:
-        cur = conn.execute(
-            """INSERT INTO preferred_routes
-               (origin, destination, flight_date, target_date_offset_days,
-                preferred_time_window, event_id, ai_reasoning)
-               VALUES (?, ?, ?, ?, ?, ?, ?)""",
-            (origin, destination, flight_date, target_date_offset_days,
-             preferred_time_window, event_id, ai_reasoning),
-        )
-        return cur.lastrowid
+              event_id: Optional[str] = None, ai_reasoning: Optional[str] = None) -> str:
+    doc_ref = db().collection(ROUTES).document()
+    doc_ref.set({
+        "origin": origin,
+        "destination": destination,
+        "flight_date": flight_date,
+        "target_date_offset_days": target_date_offset_days,
+        "preferred_time_window": preferred_time_window,
+        "event_id": event_id,
+        "ai_reasoning": ai_reasoning,
+        "status": "tracking",
+        "created_at": timeutils.now_utc_iso(),
+    })
+    return doc_ref.id
 
 
-def find_matching_route(origin: str, destination: str, flight_date: str) -> Optional[sqlite3.Row]:
-    """Existing non-expired route already tracking this exact origin/destination/
-    date, regardless of which event (if any) created it — used to avoid
-    inserting duplicate routes (and duplicate SerpApi queries) when two
-    events land on the same slot.
+def find_matching_route(origin: str, destination: str, flight_date: str) -> Optional[dict]:
+    """Existing non-expired route already tracking this exact origin/
+    destination/date, regardless of which event (if any) created it —
+    avoids inserting duplicate routes when two events land on the same slot.
     """
-    with get_connection() as conn:
-        return conn.execute(
-            """SELECT * FROM preferred_routes
-               WHERE origin = ? AND destination = ? AND flight_date = ? AND status != 'expired'""",
-            (origin, destination, flight_date),
-        ).fetchone()
+    query = (
+        db().collection(ROUTES)
+        .where(filter=FieldFilter("origin", "==", origin))
+        .where(filter=FieldFilter("destination", "==", destination))
+        .where(filter=FieldFilter("flight_date", "==", flight_date))
+    )
+    for doc in query.stream():
+        data = _doc_to_dict(doc)
+        if data["status"] != "expired":
+            return data
+    return None
 
 
-def list_routes() -> list[sqlite3.Row]:
-    with get_connection() as conn:
-        return conn.execute("SELECT * FROM preferred_routes ORDER BY id").fetchall()
+def add_route_if_new(origin: str, destination: str, flight_date: str, **kwargs) -> tuple[str, bool]:
+    """Insert a route for this origin/destination/flight_date unless a
+    matching non-expired one already exists. Returns (route_id, created) —
+    created is False when an existing route was reused instead of a new
+    insert, so callers can skip duplicate SerpApi queries for that date.
+    """
+    existing = find_matching_route(origin, destination, flight_date)
+    if existing is not None:
+        return existing["id"], False
+    route_id = add_route(origin=origin, destination=destination, flight_date=flight_date, **kwargs)
+    return route_id, True
 
 
-def list_active_routes() -> list[sqlite3.Row]:
-    with get_connection() as conn:
-        return conn.execute(
-            "SELECT * FROM preferred_routes WHERE status = 'tracking' ORDER BY id"
-        ).fetchall()
+def list_routes() -> list[dict]:
+    return [_doc_to_dict(d) for d in db().collection(ROUTES).order_by("created_at").stream()]
 
 
-def get_route(route_id: int) -> Optional[sqlite3.Row]:
-    with get_connection() as conn:
-        return conn.execute(
-            "SELECT * FROM preferred_routes WHERE id = ?", (route_id,)
-        ).fetchone()
+def list_active_routes() -> list[dict]:
+    query = db().collection(ROUTES).where(filter=FieldFilter("status", "==", "tracking"))
+    return [_doc_to_dict(d) for d in query.stream()]
 
 
-def set_route_status(route_id: int, status: str) -> None:
-    with get_connection() as conn:
-        conn.execute("UPDATE preferred_routes SET status = ? WHERE id = ?", (status, route_id))
+def get_route(route_id: str) -> Optional[dict]:
+    return _doc_to_dict(db().collection(ROUTES).document(route_id).get())
+
+
+def set_route_status(route_id: str, status: str) -> None:
+    db().collection(ROUTES).document(route_id).update({"status": status})
 
 
 def expire_due_event_routes(now_iso: str) -> int:
@@ -88,93 +116,115 @@ def expire_due_event_routes(now_iso: str) -> int:
     datetime has passed, so cron stops burning SerpApi quota on flights
     that can no longer be booked in time. Returns the number of rows updated.
     """
-    with get_connection() as conn:
-        cur = conn.execute(
-            """UPDATE preferred_routes SET status = 'expired'
-               WHERE status = 'tracking' AND event_id IN (
-                   SELECT id FROM events WHERE event_datetime < ?
-               )""",
-            (now_iso,),
+    expired_event_ids = [
+        d.id for d in db().collection(EVENTS).where(filter=FieldFilter("event_datetime", "<", now_iso)).stream()
+    ]
+    if not expired_event_ids:
+        return 0
+
+    count = 0
+    for i in range(0, len(expired_event_ids), 10):  # Firestore 'in' caps the list length; chunk to be safe
+        chunk = expired_event_ids[i:i + 10]
+        query = (
+            db().collection(ROUTES)
+            .where(filter=FieldFilter("status", "==", "tracking"))
+            .where(filter=FieldFilter("event_id", "in", chunk))
         )
-        return cur.rowcount
+        for doc in query.stream():
+            doc.reference.update({"status": "expired"})
+            count += 1
+    return count
 
 
 # ---------------------------------------------------------------- events --
 
 def add_event(event_name: str, event_datetime: str, location: str, origin: str,
-              flexibility_days: int) -> int:
-    with get_connection() as conn:
-        cur = conn.execute(
-            """INSERT INTO events (event_name, event_datetime, location, origin, flexibility_days)
-               VALUES (?, ?, ?, ?, ?)""",
-            (event_name, event_datetime, location, origin, flexibility_days),
-        )
-        return cur.lastrowid
+              flexibility_days: int) -> str:
+    doc_ref = db().collection(EVENTS).document()
+    doc_ref.set({
+        "event_name": event_name,
+        "event_datetime": event_datetime,
+        "location": location,
+        "origin": origin,
+        "flexibility_days": flexibility_days,
+        "created_at": timeutils.now_utc_iso(),
+    })
+    return doc_ref.id
 
 
-def get_event(event_id: int) -> Optional[sqlite3.Row]:
-    with get_connection() as conn:
-        return conn.execute("SELECT * FROM events WHERE id = ?", (event_id,)).fetchone()
+def get_event(event_id: str) -> Optional[dict]:
+    return _doc_to_dict(db().collection(EVENTS).document(event_id).get())
 
 
-def list_events() -> list[sqlite3.Row]:
-    with get_connection() as conn:
-        return conn.execute("SELECT * FROM events ORDER BY id").fetchall()
+def list_events() -> list[dict]:
+    return [_doc_to_dict(d) for d in db().collection(EVENTS).order_by("created_at").stream()]
 
 
 # --------------------------------------------------------- price_history --
 
-def add_price_record(route_id: int, flight_date: str, departure_time: Optional[str],
-                      price: int, airline: Optional[str], checked_at: str) -> int:
-    with get_connection() as conn:
-        cur = conn.execute(
-            """INSERT INTO price_history (route_id, flight_date, departure_time, price, airline, checked_at)
-               VALUES (?, ?, ?, ?, ?, ?)""",
-            (route_id, flight_date, departure_time, price, airline, checked_at),
-        )
-        return cur.lastrowid
+def add_price_record(route_id: str, flight_date: str, departure_time: Optional[str],
+                      price: int, airline: Optional[str], checked_at: str) -> str:
+    doc_ref = db().collection(PRICE_HISTORY).document()
+    doc_ref.set({
+        "route_id": route_id,
+        "flight_date": flight_date,
+        "departure_time": departure_time,
+        "price": price,
+        "airline": airline,
+        "checked_at": checked_at,
+    })
+    return doc_ref.id
 
 
-def get_last_price(route_id: int, before_checked_at: str) -> Optional[sqlite3.Row]:
+def get_last_price(route_id: str, before_checked_at: str) -> Optional[dict]:
     """Most recent price_history row for this route strictly before the given
     checked_at timestamp (i.e. excluding the record just inserted for the
     current check).
     """
-    with get_connection() as conn:
-        return conn.execute(
-            """SELECT * FROM price_history
-               WHERE route_id = ? AND checked_at < ?
-               ORDER BY checked_at DESC LIMIT 1""",
-            (route_id, before_checked_at),
-        ).fetchone()
+    query = (
+        db().collection(PRICE_HISTORY)
+        .where(filter=FieldFilter("route_id", "==", route_id))
+        .where(filter=FieldFilter("checked_at", "<", before_checked_at))
+        .order_by("checked_at", direction=firestore.Query.DESCENDING)
+        .limit(1)
+    )
+    docs = list(query.stream())
+    return _doc_to_dict(docs[0]) if docs else None
 
 
-def get_price_history_since(route_id: int, since_iso: str,
-                             before_checked_at: Optional[str] = None) -> list[sqlite3.Row]:
-    with get_connection() as conn:
-        if before_checked_at is not None:
-            return conn.execute(
-                """SELECT * FROM price_history
-                   WHERE route_id = ? AND checked_at >= ? AND checked_at < ?
-                   ORDER BY checked_at""",
-                (route_id, since_iso, before_checked_at),
-            ).fetchall()
-        return conn.execute(
-            """SELECT * FROM price_history
-               WHERE route_id = ? AND checked_at >= ?
-               ORDER BY checked_at""",
-            (route_id, since_iso),
-        ).fetchall()
+def get_price_history_since(route_id: str, since_iso: str,
+                             before_checked_at: Optional[str] = None) -> list[dict]:
+    query = (
+        db().collection(PRICE_HISTORY)
+        .where(filter=FieldFilter("route_id", "==", route_id))
+        .where(filter=FieldFilter("checked_at", ">=", since_iso))
+    )
+    if before_checked_at is not None:
+        query = query.where(filter=FieldFilter("checked_at", "<", before_checked_at))
+    query = query.order_by("checked_at")
+    return [_doc_to_dict(d) for d in query.stream()]
+
+
+def get_latest_price(route_id: str) -> Optional[dict]:
+    query = (
+        db().collection(PRICE_HISTORY)
+        .where(filter=FieldFilter("route_id", "==", route_id))
+        .order_by("checked_at", direction=firestore.Query.DESCENDING)
+        .limit(1)
+    )
+    docs = list(query.stream())
+    return _doc_to_dict(docs[0]) if docs else None
 
 
 # ---------------------------------------------------------- notifications --
 
-def log_notification(route_id: Optional[int], notif_type: str, sent_at: str,
-                      email_content: str) -> int:
-    with get_connection() as conn:
-        cur = conn.execute(
-            """INSERT INTO notifications_log (route_id, type, sent_at, email_content)
-               VALUES (?, ?, ?, ?)""",
-            (route_id, notif_type, sent_at, email_content),
-        )
-        return cur.lastrowid
+def log_notification(route_id: Optional[str], notif_type: str, sent_at: str,
+                      email_content: str) -> str:
+    doc_ref = db().collection(NOTIFICATIONS_LOG).document()
+    doc_ref.set({
+        "route_id": route_id,
+        "type": notif_type,
+        "sent_at": sent_at,
+        "email_content": email_content,
+    })
+    return doc_ref.id
