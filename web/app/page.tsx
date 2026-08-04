@@ -1,6 +1,7 @@
 import Link from "next/link";
 import { formatDmy } from "@/lib/dateFormat";
 import { getLatestPriceForRoute, listEvents, listRoutes } from "@/lib/firestore";
+import type { EventDoc, RouteDoc } from "@/lib/types";
 import MarkBookedButton from "./components/MarkBookedButton";
 
 export const dynamic = "force-dynamic";
@@ -9,10 +10,40 @@ function formatPrice(price: number): string {
   return `${price.toLocaleString("vi-VN")}đ`;
 }
 
+// For legacy offset-based routes (no fixed flight_date), approximate the
+// date they currently track as today+N — just for ordering rows, not
+// displayed anywhere, so no need for VN-timezone precision here.
+function effectiveSortDate(route: RouteDoc): string {
+  if (route.flight_date) return route.flight_date;
+  const d = new Date();
+  d.setUTCDate(d.getUTCDate() + route.target_date_offset_days);
+  return d.toISOString().slice(0, 10);
+}
+
+// Routes with no event first (sorted by date), then routes with an event
+// grouped by event name (sorted by date within each event's group).
+function compareRoutesForDisplay(a: RouteDoc, b: RouteDoc, eventsById: Map<string, EventDoc>): number {
+  const eventA = a.event_id ? eventsById.get(a.event_id) : undefined;
+  const eventB = b.event_id ? eventsById.get(b.event_id) : undefined;
+
+  if (!eventA && eventB) return -1;
+  if (eventA && !eventB) return 1;
+  if (eventA && eventB) {
+    const nameCompare = eventA.event_name.localeCompare(eventB.event_name, "vi");
+    if (nameCompare !== 0) return nameCompare;
+  }
+
+  return effectiveSortDate(a).localeCompare(effectiveSortDate(b));
+}
+
 export default async function DashboardPage() {
   const [routes, events] = await Promise.all([listRoutes(), listEvents()]);
   const eventsById = new Map(events.map((e) => [e.id, e]));
-  const prices = await Promise.all(routes.map((r) => getLatestPriceForRoute(r.id)));
+  const priceEntries = await Promise.all(
+    routes.map(async (r) => [r.id, await getLatestPriceForRoute(r.id)] as const)
+  );
+  const priceByRouteId = new Map(priceEntries);
+  const sortedRoutes = [...routes].sort((a, b) => compareRoutesForDisplay(a, b, eventsById));
 
   return (
     <main>
@@ -49,9 +80,9 @@ export default async function DashboardPage() {
             </tr>
           </thead>
           <tbody>
-            {routes.map((r, i) => {
+            {sortedRoutes.map((r) => {
               const event = r.event_id ? eventsById.get(r.event_id) : undefined;
-              const price = prices[i];
+              const price = priceByRouteId.get(r.id);
               return (
                 <tr key={r.id}>
                   <td>

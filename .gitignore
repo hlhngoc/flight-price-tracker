@@ -12,3 +12,4 @@ web/node_modules/
 web/.next/
 web/.env.local
 web/next-env.d.ts
+web/firestore-debug.log
