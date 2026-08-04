@@ -5,7 +5,8 @@
       "queryScope": "COLLECTION",
       "fields": [
         { "fieldPath": "route_id", "order": "ASCENDING" },
-        { "fieldPath": "checked_at", "order": "DESCENDING" }
+        { "fieldPath": "checked_at", "order": "DESCENDING" },
+        { "fieldPath": "price", "order": "ASCENDING" }
       ]
     },
     {

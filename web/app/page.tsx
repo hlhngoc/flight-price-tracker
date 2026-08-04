@@ -1,6 +1,6 @@
 import Link from "next/link";
 import { formatDmy } from "@/lib/dateFormat";
-import { getLatestPriceForRoute, listEvents, listRoutes } from "@/lib/firestore";
+import { getLatestPricesForRoute, listEvents, listRoutes } from "@/lib/firestore";
 import type { EventDoc, RouteDoc } from "@/lib/types";
 import MarkBookedButton from "./components/MarkBookedButton";
 
@@ -40,9 +40,9 @@ export default async function DashboardPage() {
   const [routes, events] = await Promise.all([listRoutes(), listEvents()]);
   const eventsById = new Map(events.map((e) => [e.id, e]));
   const priceEntries = await Promise.all(
-    routes.map(async (r) => [r.id, await getLatestPriceForRoute(r.id)] as const)
+    routes.map(async (r) => [r.id, await getLatestPricesForRoute(r.id)] as const)
   );
-  const priceByRouteId = new Map(priceEntries);
+  const pricesByRouteId = new Map(priceEntries);
   const sortedRoutes = [...routes].sort((a, b) => compareRoutesForDisplay(a, b, eventsById));
 
   return (
@@ -73,7 +73,7 @@ export default async function DashboardPage() {
               <th>Chặng</th>
               <th>Ngày bay</th>
               <th>Khung giờ</th>
-              <th>Giá gần nhất</th>
+              <th>Giá rẻ nhất (2 hãng)</th>
               <th>Sự kiện</th>
               <th>Trạng thái</th>
               <th></th>
@@ -82,7 +82,7 @@ export default async function DashboardPage() {
           <tbody>
             {sortedRoutes.map((r) => {
               const event = r.event_id ? eventsById.get(r.event_id) : undefined;
-              const price = priceByRouteId.get(r.id);
+              const prices = pricesByRouteId.get(r.id) ?? [];
               return (
                 <tr key={r.id}>
                   <td>
@@ -90,7 +90,16 @@ export default async function DashboardPage() {
                   </td>
                   <td>{r.flight_date ? formatDmy(r.flight_date) : `hôm nay+${r.target_date_offset_days}d`}</td>
                   <td>{r.preferred_time_window ?? "-"}</td>
-                  <td>{price ? formatPrice(price.price) : "-"}</td>
+                  <td>
+                    {prices.length === 0
+                      ? "-"
+                      : prices.map((p) => (
+                          <div key={p.id}>
+                            {formatPrice(p.price)}
+                            {p.airline ? ` — ${p.airline}` : ""}
+                          </div>
+                        ))}
+                  </td>
                   <td>{event ? event.event_name : "-"}</td>
                   <td>
                     <span className={`status status-${r.status}`}>{r.status}</span>

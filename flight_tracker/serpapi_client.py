@@ -74,7 +74,21 @@ def search_flights(origin: str, destination: str, flight_date: date) -> list[Fli
     return _parse_flights(payload)
 
 
-def cheapest(options: list[FlightOption]) -> Optional[FlightOption]:
-    if not options:
-        return None
-    return min(options, key=lambda o: o.price)
+def cheapest_distinct_airlines(options: list[FlightOption], max_results: int = 2) -> list[FlightOption]:
+    """Returns up to `max_results` options, price-ascending, each from a
+    different airline: the overall cheapest first, then the cheapest option
+    from a distinct airline, and so on. Which airlines come out "cheapest"
+    is not fixed — it's whatever SerpApi returns lowest on a given check, so
+    this can vary from one check to the next. If the response only has one
+    distinct airline, returns a single-element list rather than erroring.
+    """
+    picked: list[FlightOption] = []
+    seen_airlines: set[str] = set()
+    for opt in sorted(options, key=lambda o: o.price):
+        if opt.airline in seen_airlines:
+            continue
+        picked.append(opt)
+        seen_airlines.add(opt.airline)
+        if len(picked) >= max_results:
+            break
+    return picked

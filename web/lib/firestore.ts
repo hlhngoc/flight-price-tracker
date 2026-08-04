@@ -117,14 +117,19 @@ export async function setRouteStatus(routeId: string, status: RouteStatus): Prom
 
 // --------------------------------------------------------- price_history --
 
-export async function getLatestPriceForRoute(routeId: string): Promise<PriceRecord | null> {
+// Each check writes up to 2 price_history rows (one per distinct cheapest
+// airline) sharing the same checked_at. Fetch the 2 most recent by
+// checked_at desc, then keep only those matching the latest checked_at
+// value (older single-airline checks will just return 1), cheapest first.
+export async function getLatestPricesForRoute(routeId: string): Promise<PriceRecord[]> {
   const snap = await firestoreDb()
     .collection(PRICE_HISTORY)
     .where("route_id", "==", routeId)
     .orderBy("checked_at", "desc")
-    .limit(1)
+    .limit(2)
     .get();
-  if (snap.empty) return null;
-  const doc = snap.docs[0];
-  return { id: doc.id, ...(doc.data() as Omit<PriceRecord, "id">) };
+  if (snap.empty) return [];
+  const docs = snap.docs.map((d) => ({ id: d.id, ...(d.data() as Omit<PriceRecord, "id">) }));
+  const latestCheckedAt = docs[0].checked_at;
+  return docs.filter((d) => d.checked_at === latestCheckedAt).sort((a, b) => a.price - b.price);
 }

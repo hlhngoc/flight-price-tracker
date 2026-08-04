@@ -34,11 +34,20 @@ def send_email(subject: str, body: str) -> None:
 
 # ------------------------------------------------------------- templates --
 
-def format_price_decrease(origin: str, destination: str, current_price: int, last_price: int,
+def _format_options_lines(options: list[dict]) -> list[str]:
+    header = "Giá rẻ nhất hiện tại (2 hãng khác nhau):" if len(options) > 1 else "Giá rẻ nhất hiện tại:"
+    return [header] + [
+        f"  - {o['airline']}: {o['price']:,}đ"
+        for o in sorted(options, key=lambda o: o["price"])
+    ]
+
+
+def format_price_decrease(origin: str, destination: str, current_options: list[dict], last_price: int,
                            flight_date: date, preferred_time_window: str | None,
                            baseline: BaselineStats | None, new_low: bool,
                            event_name: str | None = None, days_to_event: int | None = None,
                            ai_reasoning: str | None = None) -> tuple[str, str]:
+    current_price = min(o["price"] for o in current_options)
     pct = percent_change(last_price, current_price)
     delta = last_price - current_price
     date_str = _format_vn_date(flight_date)
@@ -52,7 +61,9 @@ def format_price_decrease(origin: str, destination: str, current_price: int, las
     lines = [
         f"Chặng: {origin} → {destination}",
         date_line,
-        f"Giá: {last_price:,}đ → {current_price:,}đ (giảm {delta:,}đ, {pct:.0f}%)",
+        *_format_options_lines(current_options),
+        f"Giá rẻ nhất lần trước: {last_price:,}đ",
+        f"Giảm: {delta:,}đ ({pct:.0f}%)",
     ]
     if baseline:
         vs_baseline = percent_change(baseline.mean, current_price)
@@ -73,16 +84,18 @@ def format_price_decrease(origin: str, destination: str, current_price: int, las
     return subject, "\n".join(lines)
 
 
-def format_price_increase(origin: str, destination: str, current_price: int, last_price: int,
+def format_price_increase(origin: str, destination: str, current_options: list[dict], last_price: int,
                            flight_date: date, event_name: str | None = None,
                            days_to_event: int | None = None) -> tuple[str, str]:
+    current_price = min(o["price"] for o in current_options)
     pct = percent_change(last_price, current_price)
     subject = f"[Giá tăng] {origin} → {destination} ngày {flight_date.strftime('%d/%m')}, tăng {pct:.0f}%"
 
     lines = [
         f"Chặng: {origin} → {destination}",
         f"Ngày bay: {_format_vn_date(flight_date)}",
-        f"Giá: {last_price:,}đ → {current_price:,}đ (+{pct:.0f}%)",
+        *_format_options_lines(current_options),
+        f"Giá lần trước: {last_price:,}đ (+{pct:.0f}%)",
     ]
     if event_name and days_to_event is not None:
         lines.append(f"Sự kiện liên quan: {event_name}, còn {days_to_event} ngày nữa — cân nhắc mua sớm.")

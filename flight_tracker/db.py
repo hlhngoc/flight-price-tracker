@@ -177,15 +177,19 @@ def add_price_record(route_id: str, flight_date: str, departure_time: Optional[s
 
 
 def get_last_price(route_id: str, before_checked_at: str) -> Optional[dict]:
-    """Most recent price_history row for this route strictly before the given
-    checked_at timestamp (i.e. excluding the record just inserted for the
-    current check).
+    """Cheapest price_history row from the most recent check for this route,
+    strictly before the given checked_at timestamp (i.e. excluding the
+    records just inserted for the current check). A single check now writes
+    up to 2 rows (one per distinct cheapest airline) sharing the exact same
+    checked_at — ordering by checked_at desc, then price asc, picks the
+    cheaper of that pair (or the only row, for older single-airline checks).
     """
     query = (
         db().collection(PRICE_HISTORY)
         .where(filter=FieldFilter("route_id", "==", route_id))
         .where(filter=FieldFilter("checked_at", "<", before_checked_at))
         .order_by("checked_at", direction=firestore.Query.DESCENDING)
+        .order_by("price", direction=firestore.Query.ASCENDING)
         .limit(1)
     )
     docs = list(query.stream())
