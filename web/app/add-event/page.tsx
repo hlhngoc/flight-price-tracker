@@ -17,6 +17,7 @@ interface ResolvedLocations {
 interface EventResult {
   eventId: string;
   duplicateSlots?: number;
+  totalSlots?: number;
   pending?: boolean;
   message?: string;
 }
@@ -181,6 +182,9 @@ export default function AddEventPage() {
         <div className="result-card">
           <p>Đã tạo event #{result.eventId}.</p>
           {result.pending && <p>{result.message}</p>}
+          {!result.pending && result.totalSlots === 0 && (
+            <p>AI không tìm được slot bay phù hợp cho sự kiện này.</p>
+          )}
           {!result.pending && !!result.duplicateSlots && (
             <p>
               {result.duplicateSlots} slot bay trùng với route đang theo dõi (đã bỏ qua, không tạo thêm).

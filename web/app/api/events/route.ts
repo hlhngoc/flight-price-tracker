@@ -124,5 +124,5 @@ export async function POST(req: NextRequest) {
   // routes just created instead of waiting for the next scheduled cron run.
   await triggerPriceCheckWorkflow(createdRoutes.map((r) => r.id));
 
-  return NextResponse.json({ eventId, createdRoutes, duplicateSlots }, { status: 201 });
+  return NextResponse.json({ eventId, createdRoutes, duplicateSlots, totalSlots: slots.length }, { status: 201 });
 }
