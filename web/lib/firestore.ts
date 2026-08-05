@@ -115,6 +115,17 @@ export async function setRouteStatus(routeId: string, status: RouteStatus): Prom
   await firestoreDb().collection(ROUTES).doc(routeId).update({ status });
 }
 
+// Cascades to price_history since those rows are only ever looked up by
+// route_id and become dead weight once the route itself is gone.
+export async function deleteRoute(routeId: string): Promise<void> {
+  const db = firestoreDb();
+  const priceSnap = await db.collection(PRICE_HISTORY).where("route_id", "==", routeId).get();
+  const batch = db.batch();
+  for (const doc of priceSnap.docs) batch.delete(doc.ref);
+  batch.delete(db.collection(ROUTES).doc(routeId));
+  await batch.commit();
+}
+
 // --------------------------------------------------------- price_history --
 
 // Each check writes up to 2 price_history rows (one per distinct cheapest

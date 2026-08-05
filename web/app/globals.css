@@ -99,6 +99,16 @@ button:hover {
   text-decoration: underline;
 }
 
+.button-link-danger {
+  color: var(--danger);
+}
+
+.row-actions {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
 table {
   width: 100%;
   border-collapse: collapse;

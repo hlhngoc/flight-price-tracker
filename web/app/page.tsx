@@ -2,6 +2,7 @@ import Link from "next/link";
 import { formatDmy, formatTime } from "@/lib/dateFormat";
 import { getLatestPricesForRoute, listEvents, listRoutes } from "@/lib/firestore";
 import type { EventDoc, PriceRecord, RouteDoc } from "@/lib/types";
+import DeleteRouteButton from "./components/DeleteRouteButton";
 import MarkBookedButton from "./components/MarkBookedButton";
 
 export const dynamic = "force-dynamic";
@@ -111,7 +112,12 @@ export default async function DashboardPage() {
               const rowCount = Math.max(prices.length, 1);
               const dateCell = r.flight_date ? formatDmy(r.flight_date) : `hôm nay+${r.target_date_offset_days}d`;
               const statusCell = <span className={`status status-${r.status}`}>{r.status}</span>;
-              const actionCell = r.status === "tracking" && <MarkBookedButton routeId={r.id} />;
+              const actionCell = (
+                <div className="row-actions">
+                  {r.status === "tracking" && <MarkBookedButton routeId={r.id} />}
+                  <DeleteRouteButton routeId={r.id} />
+                </div>
+              );
 
               if (prices.length === 0) {
                 return (

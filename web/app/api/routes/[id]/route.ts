@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
-import { setRouteStatus } from "@/lib/firestore";
+import { deleteRoute, setRouteStatus } from "@/lib/firestore";
 import type { RouteStatus } from "@/lib/types";
 
 export const runtime = "nodejs";
@@ -20,5 +20,11 @@ export async function PATCH(req: NextRequest, { params }: { params: Promise<{ id
   }
 
   await setRouteStatus(id, body.status as RouteStatus);
+  return NextResponse.json({ ok: true });
+}
+
+export async function DELETE(_req: NextRequest, { params }: { params: Promise<{ id: string }> }) {
+  const { id } = await params;
+  await deleteRoute(id);
   return NextResponse.json({ ok: true });
 }
