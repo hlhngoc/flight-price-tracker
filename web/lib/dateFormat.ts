@@ -32,3 +32,19 @@ export function formatVnDateTime(utcIso: string | null | undefined): string {
   }).format(d);
   return `${datePart} ${timePart}`;
 }
+
+// Inverse of the "${datetime}:00+07:00" conversion in POST/PATCH
+// /api/events — produces a "YYYY-MM-DDTHH:MM" string suitable for
+// prefilling a <input type="datetime-local">, from a UTC-aware ISO string
+// interpreted as Asia/Ho_Chi_Minh wall-clock time.
+export function toVnDatetimeLocalInput(utcIso: string): string {
+  const d = new Date(utcIso);
+  const datePart = new Intl.DateTimeFormat("en-CA", { timeZone: "Asia/Ho_Chi_Minh" }).format(d);
+  const timePart = new Intl.DateTimeFormat("en-GB", {
+    timeZone: "Asia/Ho_Chi_Minh",
+    hour: "2-digit",
+    minute: "2-digit",
+    hour12: false,
+  }).format(d);
+  return `${datePart}T${timePart}`;
+}

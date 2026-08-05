@@ -8,7 +8,11 @@ export type RouteStatus = "tracking" | "booked" | "expired";
 // "pending" until the AI call succeeds or fails for a non-quota reason —
 // lets the daily retry cron (flight_tracker retry-pending-events) find
 // events stuck behind a Gemini quota error without re-scanning everything.
-export type EventAiStatus = "pending" | "done" | "error";
+// "processing" is a short-lived claim held by whichever caller (create,
+// edit-replan, or the retry cron) is currently mid-generateEventSlots for
+// this event — see claimEventForPlanning in lib/firestore.ts — so two
+// callers never run the AI for the same event at once.
+export type EventAiStatus = "pending" | "processing" | "done" | "error";
 
 export interface EventDoc {
   id: string;

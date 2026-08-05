@@ -76,7 +76,9 @@ export default async function DashboardPage() {
   // created (auto-retried once a day, see .github/workflows/
   // retry-pending-events.yml) or "error" for a non-quota AI failure that
   // won't auto-retry.
-  const unresolvedEvents = events.filter((e) => e.ai_status === "pending" || e.ai_status === "error");
+  const unresolvedEvents = events.filter(
+    (e) => e.ai_status === "pending" || e.ai_status === "processing" || e.ai_status === "error"
+  );
 
   return (
     <main>
@@ -117,18 +119,21 @@ export default async function DashboardPage() {
                 </td>
                 <td>{formatVnDateTime(e.event_datetime)}</td>
                 <td>
-                  {e.ai_status === "pending" ? (
-                    <span className="status status-pending" title="Đang lựa chọn tuyến phù hợp, vui lòng quay lại sau">
-                      Đang lựa chọn tuyến phù hợp
-                    </span>
-                  ) : (
+                  {e.ai_status === "error" ? (
                     <span className="status status-error" title="Đang có lỗi, cần tạo route thủ công">
                       Lỗi AI
+                    </span>
+                  ) : (
+                    <span className="status status-pending" title="Đang lựa chọn tuyến phù hợp, vui lòng quay lại sau">
+                      Đang lựa chọn tuyến phù hợp
                     </span>
                   )}
                 </td>
                 <td>
                   <div className="row-actions">
+                    <Link className="button-link" href={`/edit-event/${e.id}`}>
+                      Sửa
+                    </Link>
                     <DeleteEventButton eventId={e.id} />
                   </div>
                 </td>
@@ -163,6 +168,9 @@ export default async function DashboardPage() {
               const actionCell = (
                 <div className="row-actions">
                   {r.status === "tracking" && <MarkBookedButton routeId={r.id} />}
+                  <Link className="button-link" href={r.event_id ? `/edit-event/${r.event_id}` : `/edit-route/${r.id}`}>
+                    Sửa
+                  </Link>
                   <DeleteRouteButton routeId={r.id} hasEvent={!!r.event_id} />
                 </div>
               );

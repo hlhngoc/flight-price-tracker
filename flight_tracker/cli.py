@@ -110,9 +110,10 @@ def cmd_add_event(args) -> None:
 
 
 def cmd_retry_pending_events(_args) -> None:
-    total, succeeded, still_pending = event_suggestion.retry_pending_event_slots()
+    total, succeeded, still_pending_quota, claim_conflicts = event_suggestion.retry_pending_event_slots()
     print(f"Retried {total} pending event(s): {succeeded} succeeded, "
-          f"{still_pending} still pending (quota).")
+          f"{still_pending_quota} still pending (quota), "
+          f"{claim_conflicts} skipped (already claimed elsewhere).")
 
 
 def cmd_list_events(_args) -> None:

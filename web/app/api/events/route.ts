@@ -1,8 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { resolveAirportCode } from "@/lib/airports";
-import { AIQuotaExceededError, AIReasoningError, generateEventSlots } from "@/lib/gemini";
-import { addEvent, addRoute, findMatchingRoute, getEvent, setEventAiStatus } from "@/lib/firestore";
-import { triggerPriceCheckWorkflow } from "@/lib/githubActions";
+import { addEvent, claimEventForPlanning, getEvent } from "@/lib/firestore";
+import { planEventRoutes } from "@/lib/eventPlanning";
 import { TIME_WINDOW_PRESETS } from "@/lib/timeWindows";
 
 export const runtime = "nodejs";
@@ -63,66 +62,31 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({ error: "Failed to load event after creation" }, { status: 500 });
   }
 
-  let slots;
-  try {
-    slots = await generateEventSlots(event);
-  } catch (err) {
-    if (err instanceof AIQuotaExceededError) {
-      // Leave ai_status "pending" (the default from addEvent) — the daily
-      // retry-pending-events cron picks this event up automatically once
-      // Gemini's free-tier quota resets.
-      return NextResponse.json(
-        {
-          eventId,
-          createdRoutes: [],
-          pending: true,
-          message:
-            "Hệ thống đang bận (Gemini đã hết quota miễn phí hôm nay). Event đã được tạo — " +
-            "thông tin chuyến bay sẽ tự động được điền khi quota được khôi phục, không cần làm gì thêm.",
-        },
-        { status: 202 }
-      );
-    }
-    await setEventAiStatus(eventId, "error");
-    const message = err instanceof AIReasoningError ? err.message : "AI reasoning failed";
-    return NextResponse.json({ eventId, createdRoutes: [], error: message }, { status: 502 });
+  // A brand-new event's ai_status is "pending" (the default from addEvent)
+  // with nothing else able to reference it yet, so this claim essentially
+  // always succeeds — it exists mainly for consistency with the other
+  // callers of planEventRoutes (edit-triggered replan, the retry cron),
+  // all of which must claim first so at most one is ever mid-AI-call for a
+  // given event (see claimEventForPlanning's docstring).
+  if (!(await claimEventForPlanning(eventId))) {
+    return NextResponse.json({ eventId, createdRoutes: [], error: "Failed to claim event for planning" }, { status: 500 });
   }
 
-  const createdRoutes: Array<{
-    id: string;
-    flight_date: string;
-    preferred_time_window: string;
-    ai_reasoning: string;
-  }> = [];
-
-  let duplicateSlots = 0;
-  for (const slot of slots) {
-    const existing = await findMatchingRoute(originCode, destCode, slot.flight_date);
-    if (existing) {
-      duplicateSlots++;
-      continue;
-    }
-    const routeId = await addRoute({
-      origin: originCode,
-      destination: destCode,
-      flight_date: slot.flight_date,
-      preferred_time_window: slot.preferred_time_window,
-      event_id: eventId,
-      ai_reasoning: slot.reasoning,
-    });
-    createdRoutes.push({
-      id: routeId,
-      flight_date: slot.flight_date,
-      preferred_time_window: slot.preferred_time_window,
-      ai_reasoning: slot.reasoning,
-    });
+  const result = await planEventRoutes(event);
+  if (result.kind === "pending") {
+    // Left ai_status "pending" — the daily retry-pending-events cron picks
+    // this event up automatically once Gemini's free-tier quota resets.
+    return NextResponse.json(
+      { eventId, createdRoutes: [], pending: true, message: result.message },
+      { status: 202 }
+    );
+  }
+  if (result.kind === "error") {
+    return NextResponse.json({ eventId, createdRoutes: [], error: result.message }, { status: 502 });
   }
 
-  await setEventAiStatus(eventId, "done");
-
-  // Fire-and-forget: kick off an immediate, scoped price check for the
-  // routes just created instead of waiting for the next scheduled cron run.
-  await triggerPriceCheckWorkflow(createdRoutes.map((r) => r.id));
-
-  return NextResponse.json({ eventId, createdRoutes, duplicateSlots, totalSlots: slots.length }, { status: 201 });
+  return NextResponse.json(
+    { eventId, createdRoutes: result.createdRoutes, duplicateSlots: result.duplicateSlots, totalSlots: result.totalSlots },
+    { status: 201 }
+  );
 }

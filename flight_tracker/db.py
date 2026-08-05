@@ -174,6 +174,29 @@ def set_event_ai_status(event_id: str, status: str) -> None:
     db().collection(EVENTS).document(event_id).update({"ai_status": status})
 
 
+@firestore.transactional
+def _try_claim_event(transaction, ref) -> bool:
+    snapshot = ref.get(transaction=transaction)
+    if not snapshot.exists:
+        return False
+    if snapshot.to_dict().get("ai_status") == "processing":
+        return False
+    transaction.update(ref, {"ai_status": "processing"})
+    return True
+
+
+def claim_event_for_planning(event_id: str) -> bool:
+    """Atomically claims the right to run generate_event_slots for this
+    event — mirrors web/lib/firestore.ts's claimEventForPlanning. Used here
+    by retry_pending_event_slots (event_suggestion.py) so the daily cron
+    never races an in-flight edit-triggered replan (or vice versa) on the
+    same event. Returns False without writing anything if someone else
+    already holds the claim (ai_status == "processing").
+    """
+    ref = db().collection(EVENTS).document(event_id)
+    return _try_claim_event(db().transaction(), ref)
+
+
 # --------------------------------------------------------- price_history --
 
 def add_price_record(route_id: str, flight_date: str, departure_time: Optional[str],
