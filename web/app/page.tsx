@@ -163,7 +163,7 @@ export default async function DashboardPage() {
               const actionCell = (
                 <div className="row-actions">
                   {r.status === "tracking" && <MarkBookedButton routeId={r.id} />}
-                  <DeleteRouteButton routeId={r.id} />
+                  <DeleteRouteButton routeId={r.id} hasEvent={!!r.event_id} />
                 </div>
               );
 

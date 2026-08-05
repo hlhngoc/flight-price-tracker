@@ -53,10 +53,31 @@ export async function listEvents(): Promise<EventDoc[]> {
 }
 
 // Only meaningful for events stuck at ai_status "pending"/"error" — those
-// never got routes created, so there's nothing else to cascade-delete (a
-// "done" event's routes, if any, are deleted independently via deleteRoute).
+// never got routes created, so there's nothing else to cascade-delete. A
+// "done" event that already has routes must go through
+// deleteEventAndRoutes instead, so those routes don't end up orphaned.
 export async function deleteEvent(eventId: string): Promise<void> {
   await firestoreDb().collection(EVENTS).doc(eventId).delete();
+}
+
+// Deleting a route that was created from an event means the user wants to
+// abandon that whole event, not just this one slot — so this removes the
+// event, every route tied to it (not just the one the user clicked "Xoá"
+// on), and their price_history, in one batch.
+export async function deleteEventAndRoutes(eventId: string): Promise<void> {
+  const db = firestoreDb();
+  const routesSnap = await db.collection(ROUTES).where("event_id", "==", eventId).get();
+  const priceSnaps = await Promise.all(
+    routesSnap.docs.map((d) => db.collection(PRICE_HISTORY).where("route_id", "==", d.id).get())
+  );
+
+  const batch = db.batch();
+  for (const priceSnap of priceSnaps) {
+    for (const doc of priceSnap.docs) batch.delete(doc.ref);
+  }
+  for (const doc of routesSnap.docs) batch.delete(doc.ref);
+  batch.delete(db.collection(EVENTS).doc(eventId));
+  await batch.commit();
 }
 
 export async function setEventAiStatus(eventId: string, status: EventAiStatus): Promise<void> {

@@ -94,8 +94,8 @@ export default function AddEventPage() {
       </Link>
       <h1>Thêm sự kiện</h1>
       <p style={{ color: "var(--muted)", fontSize: 13 }}>
-        Gemini sẽ chọn tối đa 5 slot bay hợp lý (ngày + khung giờ), tự động trở thành route được
-        theo dõi bởi cron — không cần gọi AI lại sau này.
+        Hệ thống sẽ chọn tối đa 5 slot bay hợp lý (ngày + khung giờ), tự động trở thành route được
+        theo dõi.
       </p>
 
       {!resolved && (
