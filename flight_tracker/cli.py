@@ -109,6 +109,12 @@ def cmd_add_event(args) -> None:
         print("No new routes created (AI returned nothing usable, or all slots were duplicates).")
 
 
+def cmd_retry_pending_events(_args) -> None:
+    total, succeeded, still_pending = event_suggestion.retry_pending_event_slots()
+    print(f"Retried {total} pending event(s): {succeeded} succeeded, "
+          f"{still_pending} still pending (quota).")
+
+
 def cmd_list_events(_args) -> None:
     for e in db.list_events():
         print(f"#{e['id']}: {e['event_name']} @ {e['event_datetime']} "
@@ -164,6 +170,10 @@ def build_parser() -> argparse.ArgumentParser:
     p.set_defaults(func=cmd_add_event)
 
     sub.add_parser("list-events").set_defaults(func=cmd_list_events)
+
+    sub.add_parser("retry-pending-events",
+                    help="Retry AI slot generation for events stuck pending (e.g. Gemini quota)") \
+        .set_defaults(func=cmd_retry_pending_events)
 
     return parser
 

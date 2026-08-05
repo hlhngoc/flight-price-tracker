@@ -35,6 +35,11 @@ Chỉ trả về JSON theo đúng schema sau, không thêm text nào khác:
 
 export class AIReasoningError extends Error {}
 
+// Gemini returned 429 (daily free-tier quota exhausted). Distinct from
+// AIReasoningError so callers can leave the event "pending" for an
+// automatic retry instead of treating it as a hard failure.
+export class AIQuotaExceededError extends AIReasoningError {}
+
 function vnDateString(d: Date): string {
   return new Intl.DateTimeFormat("en-CA", { timeZone: "Asia/Ho_Chi_Minh" }).format(d);
 }
@@ -116,7 +121,7 @@ sau hoặc quá sát giờ sự kiện.`;
 
   if (!resp.ok) {
     if (resp.status === 429) {
-      throw new AIReasoningError(
+      throw new AIQuotaExceededError(
         `Gemini API đã hết quota miễn phí trong ngày cho model "${model}" (giới hạn request/ngày). ` +
           "Hãy thử lại vào ngày mai, đổi sang model khác qua biến môi trường GEMINI_MODEL, hoặc bật billing cho project trên Google AI Studio."
       );

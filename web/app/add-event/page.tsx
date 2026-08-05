@@ -25,6 +25,8 @@ interface CreatedRoute {
 interface EventResult {
   eventId: string;
   createdRoutes: CreatedRoute[];
+  pending?: boolean;
+  message?: string;
 }
 
 export default function AddEventPage() {
@@ -186,7 +188,9 @@ export default function AddEventPage() {
       {result && (
         <div className="result-card">
           <p>Đã tạo event #{result.eventId}.</p>
-          {result.createdRoutes.length === 0 ? (
+          {result.pending ? (
+            <p>{result.message}</p>
+          ) : result.createdRoutes.length === 0 ? (
             <p>Không có route mới nào được tạo (AI không trả về slot hợp lệ, hoặc trùng route đã có).</p>
           ) : (
             <>

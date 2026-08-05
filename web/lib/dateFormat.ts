@@ -15,3 +15,20 @@ export function formatTime(departureTime: string | null | undefined): string {
   const match = departureTime.match(/(\d{2}):(\d{2})$/);
   return match ? `${match[1]}:${match[2]}` : "-";
 }
+
+// event_datetime is stored as a UTC-aware ISO string; display it converted
+// to Asia/Ho_Chi_Minh wall-clock time, matching how it was originally
+// entered (datetime-local input, interpreted as VN local time).
+export function formatVnDateTime(utcIso: string | null | undefined): string {
+  if (!utcIso) return "-";
+  const d = new Date(utcIso);
+  if (Number.isNaN(d.getTime())) return "-";
+  const datePart = new Intl.DateTimeFormat("en-GB", { timeZone: "Asia/Ho_Chi_Minh" }).format(d);
+  const timePart = new Intl.DateTimeFormat("en-GB", {
+    timeZone: "Asia/Ho_Chi_Minh",
+    hour: "2-digit",
+    minute: "2-digit",
+    hour12: false,
+  }).format(d);
+  return `${datePart} ${timePart}`;
+}

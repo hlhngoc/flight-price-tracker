@@ -1,0 +1,36 @@
+name: Retry pending AI event slots
+
+on:
+  schedule:
+    # 08:15 UTC — shortly after Gemini's free-tier daily quota reset
+    # (documented as ~midnight Pacific Time: 08:00 UTC during PST,
+    # 07:00 UTC during PDT). The fixed UTC trigger covers both without
+    # needing to shift the cron twice a year for DST.
+    - cron: "15 8 * * *"
+  workflow_dispatch: {}
+
+jobs:
+  retry-pending-events:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - run: pip install -r requirements.txt
+
+      - name: Retry AI slot generation for events stuck pending
+        env:
+          SERPAPI_KEY: ${{ secrets.SERPAPI_KEY }}
+          GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY }}
+          GEMINI_MODEL: ${{ vars.GEMINI_MODEL }}
+          SMTP_HOST: ${{ secrets.SMTP_HOST }}
+          SMTP_PORT: ${{ secrets.SMTP_PORT }}
+          SMTP_USER: ${{ secrets.SMTP_USER }}
+          SMTP_PASSWORD: ${{ secrets.SMTP_PASSWORD }}
+          EMAIL_FROM: ${{ secrets.EMAIL_FROM }}
+          EMAIL_TO: ${{ secrets.EMAIL_TO }}
+          FIREBASE_SERVICE_ACCOUNT_JSON: ${{ secrets.FIREBASE_SERVICE_ACCOUNT_JSON }}
+        run: python -m flight_tracker.cli retry-pending-events

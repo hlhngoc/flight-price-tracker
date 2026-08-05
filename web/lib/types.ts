@@ -5,14 +5,21 @@
 
 export type RouteStatus = "tracking" | "booked" | "expired";
 
+// "pending" until the AI call succeeds or fails for a non-quota reason —
+// lets the daily retry cron (flight_tracker retry-pending-events) find
+// events stuck behind a Gemini quota error without re-scanning everything.
+export type EventAiStatus = "pending" | "done" | "error";
+
 export interface EventDoc {
   id: string;
   event_name: string;
   event_datetime: string; // UTC-aware ISO string
   location: string;
   origin: string;
+  destination: string | null;
   flexibility_days: number;
   preferred_time_window: string | null;
+  ai_status: EventAiStatus;
   created_at: string;
 }
 

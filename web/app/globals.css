@@ -157,6 +157,18 @@ th {
   color: var(--muted);
 }
 
+.status-pending {
+  color: var(--accent);
+}
+
+.status-error {
+  color: var(--danger);
+}
+
+.pending-events-table {
+  margin-bottom: 24px;
+}
+
 form.stack {
   display: flex;
   flex-direction: column;

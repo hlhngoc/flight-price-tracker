@@ -43,6 +43,12 @@ class AIReasoningError(RuntimeError):
     pass
 
 
+class AIQuotaExceededError(AIReasoningError):
+    """Gemini returned 429 (daily free-tier quota exhausted). Distinct from
+    AIReasoningError so callers can leave the event 'pending' for an
+    automatic retry instead of treating it as a hard failure."""
+
+
 def _call_gemini(system: str, user_prompt: str) -> str:
     model = config.gemini_model()
     url = f"https://generativelanguage.googleapis.com/v1beta/models/{model}:generateContent"
@@ -61,7 +67,7 @@ def _call_gemini(system: str, user_prompt: str) -> str:
         timeout=60,
     )
     if resp.status_code == 429:
-        raise AIReasoningError(
+        raise AIQuotaExceededError(
             f'Gemini API đã hết quota miễn phí trong ngày cho model "{model}" (giới hạn request/ngày). '
             "Hãy thử lại vào ngày mai, đổi sang model khác qua biến môi trường GEMINI_MODEL, "
             "hoặc bật billing cho project trên Google AI Studio."

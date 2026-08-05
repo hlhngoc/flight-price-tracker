@@ -1,7 +1,8 @@
 import Link from "next/link";
-import { formatDmy, formatTime } from "@/lib/dateFormat";
+import { formatDmy, formatTime, formatVnDateTime } from "@/lib/dateFormat";
 import { getLatestPricesForRoute, listEvents, listRoutes } from "@/lib/firestore";
 import type { EventDoc, PriceRecord, RouteDoc } from "@/lib/types";
+import DeleteEventButton from "./components/DeleteEventButton";
 import DeleteRouteButton from "./components/DeleteRouteButton";
 import MarkBookedButton from "./components/MarkBookedButton";
 
@@ -70,6 +71,12 @@ export default async function DashboardPage() {
   );
   const pricesByRouteId = new Map(priceEntries);
   const sortedRoutes = [...routes].sort((a, b) => compareRoutesForDisplay(a, b, eventsById));
+  // Events whose AI slot generation hasn't completed yet — most commonly
+  // "pending" because Gemini's daily quota was exhausted when the event was
+  // created (auto-retried once a day, see .github/workflows/
+  // retry-pending-events.yml) or "error" for a non-quota AI failure that
+  // won't auto-retry.
+  const unresolvedEvents = events.filter((e) => e.ai_status === "pending" || e.ai_status === "error");
 
   return (
     <main>
@@ -89,6 +96,47 @@ export default async function DashboardPage() {
           </form>
         </div>
       </div>
+
+      {unresolvedEvents.length > 0 && (
+        <table className="pending-events-table">
+          <thead>
+            <tr>
+              <th>Sự kiện</th>
+              <th>Chặng</th>
+              <th>Giờ sự kiện</th>
+              <th>Trạng thái</th>
+              <th></th>
+            </tr>
+          </thead>
+          <tbody>
+            {unresolvedEvents.map((e) => (
+              <tr key={e.id}>
+                <td>{e.event_name}</td>
+                <td>
+                  {e.origin} → {e.destination ?? "-"}
+                </td>
+                <td>{formatVnDateTime(e.event_datetime)}</td>
+                <td>
+                  {e.ai_status === "pending" ? (
+                    <span className="status status-pending" title="Gemini hết quota — tự động thử lại hàng ngày">
+                      Đang chờ AI
+                    </span>
+                  ) : (
+                    <span className="status status-error" title="AI lỗi (không phải do hết quota) — cần tạo route thủ công">
+                      Lỗi AI
+                    </span>
+                  )}
+                </td>
+                <td>
+                  <div className="row-actions">
+                    <DeleteEventButton eventId={e.id} />
+                  </div>
+                </td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      )}
 
       {routes.length === 0 ? (
         <p className="empty">Chưa có route nào được theo dõi.</p>

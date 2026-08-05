@@ -5,7 +5,7 @@
 // what the dashboard and the two on-demand flows (add event / add route)
 // need.
 import { firestoreDb } from "./firebaseAdmin";
-import type { EventDoc, PriceRecord, RouteDoc, RouteStatus } from "./types";
+import type { EventAiStatus, EventDoc, PriceRecord, RouteDoc, RouteStatus } from "./types";
 
 const EVENTS = "events";
 const ROUTES = "preferred_routes";
@@ -22,12 +22,22 @@ export async function addEvent(input: {
   event_datetime: string;
   location: string;
   origin: string;
+  destination?: string | null;
   flexibility_days: number;
   preferred_time_window?: string | null;
 }): Promise<string> {
   const ref = await firestoreDb()
     .collection(EVENTS)
-    .add({ ...input, preferred_time_window: input.preferred_time_window ?? null, created_at: nowIso() });
+    .add({
+      ...input,
+      destination: input.destination ?? null,
+      preferred_time_window: input.preferred_time_window ?? null,
+      // Left "pending" until generateEventSlots succeeds or fails for a
+      // non-quota reason — see setEventAiStatus and the retry-pending-events
+      // cron (flight_tracker/event_suggestion.py).
+      ai_status: "pending" satisfies EventAiStatus,
+      created_at: nowIso(),
+    });
   return ref.id;
 }
 
@@ -40,6 +50,17 @@ export async function getEvent(eventId: string): Promise<EventDoc | null> {
 export async function listEvents(): Promise<EventDoc[]> {
   const snap = await firestoreDb().collection(EVENTS).orderBy("created_at").get();
   return snap.docs.map((d) => ({ id: d.id, ...(d.data() as Omit<EventDoc, "id">) }));
+}
+
+// Only meaningful for events stuck at ai_status "pending"/"error" — those
+// never got routes created, so there's nothing else to cascade-delete (a
+// "done" event's routes, if any, are deleted independently via deleteRoute).
+export async function deleteEvent(eventId: string): Promise<void> {
+  await firestoreDb().collection(EVENTS).doc(eventId).delete();
+}
+
+export async function setEventAiStatus(eventId: string, status: EventAiStatus): Promise<void> {
+  await firestoreDb().collection(EVENTS).doc(eventId).update({ ai_status: status });
 }
 
 // ---------------------------------------------------------------- routes --

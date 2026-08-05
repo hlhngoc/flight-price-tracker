@@ -139,14 +139,19 @@ def expire_due_event_routes(now_iso: str) -> int:
 # ---------------------------------------------------------------- events --
 
 def add_event(event_name: str, event_datetime: str, location: str, origin: str,
-              flexibility_days: int) -> str:
+              flexibility_days: int, destination: Optional[str] = None) -> str:
     doc_ref = db().collection(EVENTS).document()
     doc_ref.set({
         "event_name": event_name,
         "event_datetime": event_datetime,
         "location": location,
         "origin": origin,
+        "destination": destination,
         "flexibility_days": flexibility_days,
+        # "pending" until the AI call succeeds or fails for a non-quota
+        # reason (see event_suggestion.py) — lets the retry cron find events
+        # stuck behind a Gemini quota error without re-scanning everything.
+        "ai_status": "pending",
         "created_at": timeutils.now_utc_iso(),
     })
     return doc_ref.id
@@ -158,6 +163,15 @@ def get_event(event_id: str) -> Optional[dict]:
 
 def list_events() -> list[dict]:
     return [_doc_to_dict(d) for d in db().collection(EVENTS).order_by("created_at").stream()]
+
+
+def list_pending_events() -> list[dict]:
+    query = db().collection(EVENTS).where(filter=FieldFilter("ai_status", "==", "pending"))
+    return [_doc_to_dict(d) for d in query.stream()]
+
+
+def set_event_ai_status(event_id: str, status: str) -> None:
+    db().collection(EVENTS).document(event_id).update({"ai_status": status})
 
 
 # --------------------------------------------------------- price_history --

@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { resolveAirportCode } from "@/lib/airports";
-import { AIReasoningError, generateEventSlots } from "@/lib/gemini";
-import { addEvent, addRoute, findMatchingRoute, getEvent } from "@/lib/firestore";
+import { AIQuotaExceededError, AIReasoningError, generateEventSlots } from "@/lib/gemini";
+import { addEvent, addRoute, findMatchingRoute, getEvent, setEventAiStatus } from "@/lib/firestore";
 import { triggerPriceCheckWorkflow } from "@/lib/githubActions";
 import { TIME_WINDOW_PRESETS } from "@/lib/timeWindows";
 
@@ -54,6 +54,7 @@ export async function POST(req: NextRequest) {
     event_datetime: eventDatetimeUtcIso,
     location,
     origin: originCode,
+    destination: destCode,
     flexibility_days: flexibilityDays,
     preferred_time_window: body.timeWindow || null,
   });
@@ -66,6 +67,23 @@ export async function POST(req: NextRequest) {
   try {
     slots = await generateEventSlots(event);
   } catch (err) {
+    if (err instanceof AIQuotaExceededError) {
+      // Leave ai_status "pending" (the default from addEvent) — the daily
+      // retry-pending-events cron picks this event up automatically once
+      // Gemini's free-tier quota resets.
+      return NextResponse.json(
+        {
+          eventId,
+          createdRoutes: [],
+          pending: true,
+          message:
+            "Hệ thống đang bận (Gemini đã hết quota miễn phí hôm nay). Event đã được tạo — " +
+            "thông tin chuyến bay sẽ tự động được điền khi quota được khôi phục, không cần làm gì thêm.",
+        },
+        { status: 202 }
+      );
+    }
+    await setEventAiStatus(eventId, "error");
     const message = err instanceof AIReasoningError ? err.message : "AI reasoning failed";
     return NextResponse.json({ eventId, createdRoutes: [], error: message }, { status: 502 });
   }
@@ -95,6 +113,8 @@ export async function POST(req: NextRequest) {
       ai_reasoning: slot.reasoning,
     });
   }
+
+  await setEventAiStatus(eventId, "done");
 
   // Fire-and-forget: kick off an immediate, scoped price check for the
   // routes just created instead of waiting for the next scheduled cron run.
