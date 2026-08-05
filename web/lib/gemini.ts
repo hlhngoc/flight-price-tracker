@@ -115,6 +115,12 @@ sau hoặc quá sát giờ sự kiện.`;
   });
 
   if (!resp.ok) {
+    if (resp.status === 429) {
+      throw new AIReasoningError(
+        `Gemini API đã hết quota miễn phí trong ngày cho model "${model}" (giới hạn request/ngày). ` +
+          "Hãy thử lại vào ngày mai, đổi sang model khác qua biến môi trường GEMINI_MODEL, hoặc bật billing cho project trên Google AI Studio."
+      );
+    }
     throw new AIReasoningError(`Gemini request failed: ${resp.status} ${await resp.text()}`);
   }
 

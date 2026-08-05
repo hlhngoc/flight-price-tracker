@@ -44,7 +44,8 @@ class AIReasoningError(RuntimeError):
 
 
 def _call_gemini(system: str, user_prompt: str) -> str:
-    url = f"https://generativelanguage.googleapis.com/v1beta/models/{config.gemini_model()}:generateContent"
+    model = config.gemini_model()
+    url = f"https://generativelanguage.googleapis.com/v1beta/models/{model}:generateContent"
     resp = requests.post(
         url,
         params={"key": config.gemini_api_key()},
@@ -59,6 +60,12 @@ def _call_gemini(system: str, user_prompt: str) -> str:
         },
         timeout=60,
     )
+    if resp.status_code == 429:
+        raise AIReasoningError(
+            f'Gemini API đã hết quota miễn phí trong ngày cho model "{model}" (giới hạn request/ngày). '
+            "Hãy thử lại vào ngày mai, đổi sang model khác qua biến môi trường GEMINI_MODEL, "
+            "hoặc bật billing cho project trên Google AI Studio."
+        )
     resp.raise_for_status()
     payload = resp.json()
     return payload["candidates"][0]["content"]["parts"][0]["text"]
