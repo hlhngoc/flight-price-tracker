@@ -81,11 +81,15 @@ export async function generateEventSlots(event: EventDoc): Promise<EventSlot[]> 
     .toISOString()
     .slice(0, 10);
 
+  const timeWindowLine = event.preferred_time_window
+    ? `\nKhung giờ bay ưa thích: ${event.preferred_time_window} (ưu tiên chọn slot trong khung giờ này nếu vẫn đảm bảo đủ buffer an toàn)`
+    : "";
+
   const userPrompt = `Tên sự kiện: ${event.event_name}
 Thời gian sự kiện: ${vnDateTimeString(eventDatetime)}
 Địa điểm: ${event.location}
 Điểm đi: ${event.origin}
-Độ linh hoạt: ${event.flexibility_days} ngày trước sự kiện
+Độ linh hoạt: ${event.flexibility_days} ngày trước sự kiện${timeWindowLine}
 
 LƯU Ý QUAN TRỌNG: Chuyến bay PHẢI đến nơi trước giờ sự kiện ít nhất
 ${BUFFER_HOURS} tiếng (buffer di chuyển + rủi ro delay). Nếu sự kiện diễn ra

@@ -23,10 +23,11 @@ export async function addEvent(input: {
   location: string;
   origin: string;
   flexibility_days: number;
+  preferred_time_window?: string | null;
 }): Promise<string> {
   const ref = await firestoreDb()
     .collection(EVENTS)
-    .add({ ...input, created_at: nowIso() });
+    .add({ ...input, preferred_time_window: input.preferred_time_window ?? null, created_at: nowIso() });
   return ref.id;
 }
 

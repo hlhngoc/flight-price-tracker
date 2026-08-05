@@ -3,6 +3,7 @@ import { resolveAirportCode } from "@/lib/airports";
 import { AIReasoningError, generateEventSlots } from "@/lib/gemini";
 import { addEvent, addRoute, findMatchingRoute, getEvent } from "@/lib/firestore";
 import { triggerPriceCheckWorkflow } from "@/lib/githubActions";
+import { TIME_WINDOW_PRESETS } from "@/lib/timeWindows";
 
 export const runtime = "nodejs";
 
@@ -13,6 +14,7 @@ interface EventRequestBody {
   origin?: string;
   flexibilityDays?: number;
   destination?: string;
+  timeWindow?: string;
 }
 
 export async function POST(req: NextRequest) {
@@ -26,6 +28,9 @@ export async function POST(req: NextRequest) {
   const { name, datetime, location, origin, flexibilityDays } = body;
   if (!name || !datetime || !location || !origin || flexibilityDays == null) {
     return NextResponse.json({ error: "Thiếu trường bắt buộc." }, { status: 400 });
+  }
+  if (body.timeWindow && !TIME_WINDOW_PRESETS.includes(body.timeWindow)) {
+    return NextResponse.json({ error: "Khung giờ mong muốn không hợp lệ." }, { status: 400 });
   }
 
   let originCode: string;
@@ -50,6 +55,7 @@ export async function POST(req: NextRequest) {
     location,
     origin: originCode,
     flexibility_days: flexibilityDays,
+    preferred_time_window: body.timeWindow || null,
   });
   const event = await getEvent(eventId);
   if (!event) {

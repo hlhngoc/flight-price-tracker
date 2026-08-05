@@ -4,12 +4,15 @@ import Link from "next/link";
 import { useState, type FormEvent } from "react";
 import { cityNameForCode, resolveAirportCode } from "@/lib/airports";
 import { formatDmy } from "@/lib/dateFormat";
+import { TIME_WINDOW_PRESETS } from "@/lib/timeWindows";
 
 interface ResolvedLocations {
   originCode: string;
   originName: string;
   destCode: string;
   destName: string;
+  flexibilityDays: number;
+  timeWindow: string;
 }
 
 interface CreatedRoute {
@@ -31,6 +34,7 @@ export default function AddEventPage() {
   const [origin, setOrigin] = useState("");
   const [flexibilityDays, setFlexibilityDays] = useState(3);
   const [destination, setDestination] = useState("");
+  const [timeWindow, setTimeWindow] = useState("");
   const [error, setError] = useState<string | null>(null);
   const [submitting, setSubmitting] = useState(false);
   const [result, setResult] = useState<EventResult | null>(null);
@@ -51,6 +55,8 @@ export default function AddEventPage() {
         originName: cityNameForCode(originCode) ?? originCode,
         destCode,
         destName: cityNameForCode(destCode) ?? destCode,
+        flexibilityDays,
+        timeWindow,
       });
     } catch (err) {
       setError((err as Error).message);
@@ -72,6 +78,7 @@ export default function AddEventPage() {
           origin,
           flexibilityDays,
           destination: destination || undefined,
+          timeWindow: timeWindow || undefined,
         }),
       });
       const data = await resp.json();
@@ -132,6 +139,17 @@ export default function AddEventPage() {
             />
           </label>
           <label>
+            Khung giờ bay ưa thích (tùy chọn — AI ưu tiên chọn trong khung này nếu vẫn đủ buffer)
+            <select value={timeWindow} onChange={(e) => setTimeWindow(e.target.value)}>
+              <option value="">Không có</option>
+              {TIME_WINDOW_PRESETS.map((w) => (
+                <option key={w} value={w}>
+                  {w}
+                </option>
+              ))}
+            </select>
+          </label>
+          <label>
             Mã sân bay đến (tùy chọn — mặc định suy ra từ địa điểm)
             <input value={destination} onChange={(e) => setDestination(e.target.value)} />
           </label>
@@ -150,6 +168,8 @@ export default function AddEventPage() {
             <li>
               Điểm đến: <strong>{resolved.destName}</strong> ({resolved.destCode})
             </li>
+            <li>Độ linh hoạt: {resolved.flexibilityDays} ngày trước sự kiện</li>
+            <li>Khung giờ bay ưa thích: {resolved.timeWindow || "(không có, để AI tự chọn)"}</li>
           </ul>
           {error && <p className="error">{error}</p>}
           <div className="row-actions">

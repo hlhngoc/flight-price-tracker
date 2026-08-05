@@ -12,6 +12,7 @@ export interface EventDoc {
   location: string;
   origin: string;
   flexibility_days: number;
+  preferred_time_window: string | null;
   created_at: string;
 }
 
