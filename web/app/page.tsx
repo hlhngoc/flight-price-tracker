@@ -118,11 +118,11 @@ export default async function DashboardPage() {
                 <td>{formatVnDateTime(e.event_datetime)}</td>
                 <td>
                   {e.ai_status === "pending" ? (
-                    <span className="status status-pending" title="Gemini hết quota — tự động thử lại hàng ngày">
+                    <span className="status status-pending" title="Đang lựa chọn tuyến phù hợp, vui lòng quay lại sau">
                       Đang lựa chọn tuyến phù hợp
                     </span>
                   ) : (
-                    <span className="status status-error" title="AI lỗi (không phải do hết quota) — cần tạo route thủ công">
+                    <span className="status status-error" title="Đang có lỗi, cần tạo route thủ công">
                       Lỗi AI
                     </span>
                   )}
