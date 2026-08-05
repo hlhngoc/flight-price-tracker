@@ -2,7 +2,15 @@
 
 import Link from "next/link";
 import { useState, type FormEvent } from "react";
+import { cityNameForCode, resolveAirportCode } from "@/lib/airports";
 import { formatDmy } from "@/lib/dateFormat";
+
+interface ResolvedLocations {
+  originCode: string;
+  originName: string;
+  destCode: string;
+  destName: string;
+}
 
 interface CreatedRoute {
   id: string;
@@ -26,9 +34,30 @@ export default function AddEventPage() {
   const [error, setError] = useState<string | null>(null);
   const [submitting, setSubmitting] = useState(false);
   const [result, setResult] = useState<EventResult | null>(null);
+  const [resolved, setResolved] = useState<ResolvedLocations | null>(null);
 
-  async function onSubmit(e: FormEvent) {
+  // Resolving locally (client-side, no network round trip needed since
+  // resolveAirportCode has no server-only deps) lets the user catch a
+  // mistyped/misresolved city before it gets baked into the AI prompt and
+  // the routes that get created from it.
+  function onSubmit(e: FormEvent) {
     e.preventDefault();
+    setError(null);
+    try {
+      const originCode = resolveAirportCode(origin);
+      const destCode = resolveAirportCode(destination || location);
+      setResolved({
+        originCode,
+        originName: cityNameForCode(originCode) ?? originCode,
+        destCode,
+        destName: cityNameForCode(destCode) ?? destCode,
+      });
+    } catch (err) {
+      setError((err as Error).message);
+    }
+  }
+
+  async function confirmAndCreate() {
     setSubmitting(true);
     setError(null);
     setResult(null);
@@ -51,6 +80,7 @@ export default function AddEventPage() {
         return;
       }
       setResult(data);
+      setResolved(null);
     } finally {
       setSubmitting(false);
     }
@@ -67,48 +97,71 @@ export default function AddEventPage() {
         theo dõi bởi cron — không cần gọi AI lại sau này.
       </p>
 
-      <form className="stack" onSubmit={onSubmit}>
-        <label>
-          Tên sự kiện
-          <input value={name} onChange={(e) => setName(e.target.value)} required />
-        </label>
-        <label>
-          Ngày giờ sự kiện (giờ Việt Nam)
-          <input
-            type="datetime-local"
-            value={datetime}
-            onChange={(e) => setDatetime(e.target.value)}
-            required
-          />
-        </label>
-        <label>
-          Địa điểm
-          <input value={location} onChange={(e) => setLocation(e.target.value)} required />
-        </label>
-        <label>
-          Điểm đi (thành phố hoặc mã IATA)
-          <input value={origin} onChange={(e) => setOrigin(e.target.value)} required />
-        </label>
-        <label>
-          Độ linh hoạt (số ngày trước sự kiện)
-          <input
-            type="number"
-            min={0}
-            max={30}
-            value={flexibilityDays}
-            onChange={(e) => setFlexibilityDays(Number(e.target.value))}
-            required
-          />
-        </label>
-        <label>
-          Mã sân bay đến (tùy chọn — mặc định suy ra từ địa điểm)
-          <input value={destination} onChange={(e) => setDestination(e.target.value)} />
-        </label>
-        {error && <p className="error">{error}</p>}
-        <button type="submit" disabled={submitting}>
-          {submitting ? "Đang xử lý..." : "Tạo sự kiện"}
-        </button>
-      </form>
+      {!resolved && (
+        <form className="stack" onSubmit={onSubmit}>
+          <label>
+            Tên sự kiện
+            <input value={name} onChange={(e) => setName(e.target.value)} required />
+          </label>
+          <label>
+            Ngày giờ sự kiện (giờ Việt Nam)
+            <input
+              type="datetime-local"
+              value={datetime}
+              onChange={(e) => setDatetime(e.target.value)}
+              required
+            />
+          </label>
+          <label>
+            Địa điểm
+            <input value={location} onChange={(e) => setLocation(e.target.value)} required />
+          </label>
+          <label>
+            Điểm đi (thành phố hoặc mã IATA)
+            <input value={origin} onChange={(e) => setOrigin(e.target.value)} required />
+          </label>
+          <label>
+            Độ linh hoạt (số ngày trước sự kiện)
+            <input
+              type="number"
+              min={0}
+              max={30}
+              value={flexibilityDays}
+              onChange={(e) => setFlexibilityDays(Number(e.target.value))}
+              required
+            />
+          </label>
+          <label>
+            Mã sân bay đến (tùy chọn — mặc định suy ra từ địa điểm)
+            <input value={destination} onChange={(e) => setDestination(e.target.value)} />
+          </label>
+          {error && <p className="error">{error}</p>}
+          <button type="submit">Kiểm tra & tiếp tục</button>
+        </form>
+      )}
+
+      {resolved && (
+        <div className="result-card">
+          <p>Xác nhận lại thông tin trước khi AI chọn lịch bay:</p>
+          <ul>
+            <li>
+              Điểm đi: <strong>{resolved.originName}</strong> ({resolved.originCode})
+            </li>
+            <li>
+              Điểm đến: <strong>{resolved.destName}</strong> ({resolved.destCode})
+            </li>
+          </ul>
+          {error && <p className="error">{error}</p>}
+          <div className="row-actions">
+            <button type="button" className="button-secondary" onClick={() => setResolved(null)} disabled={submitting}>
+              Sửa lại
+            </button>
+            <button type="button" onClick={confirmAndCreate} disabled={submitting}>
+              {submitting ? "Đang xử lý..." : "Xác nhận, tạo sự kiện"}
+            </button>
+          </div>
+        </div>
+      )}
 
       {result && (
         <div className="result-card">
