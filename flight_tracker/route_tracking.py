@@ -5,9 +5,21 @@ architecture v2: decrease -> always email, increase -> always email, no AI
 call at this stage — event context comes from the ai_reasoning saved on the
 route when it was created.
 """
+import time
 from datetime import date, datetime, timedelta, timezone
 
 from . import db, email_sender, pricing, serpapi_client, time_windows, timeutils
+
+# Google Flights (via SerpApi) sometimes returns a thinner result set — e.g.
+# only 1 airline instead of several — on the very first query for a given
+# origin/destination/date, then a fuller one on an identical query moments
+# later. This is most visible right after a route is created and checked
+# immediately (the auto-trigger on add-event), since that's the one case
+# where we're guaranteed to be the *first ever* query for that route+date.
+# A short retry-with-delay smooths this over.
+RETRY_MIN_DISTINCT_AIRLINES = 2
+RETRY_ATTEMPTS = 2
+RETRY_DELAY_SECONDS = 5
 
 
 def _target_date(route) -> date:
@@ -36,13 +48,34 @@ def _cheapest_per_check(history_rows: list[dict]) -> list[int]:
     return list(cheapest_by_checked_at.values())
 
 
+def _search_and_select(route, target_date: date, preferred_window):
+    """Searches + picks cheapest-distinct-airline options, retrying a
+    couple of times (see RETRY_* above) if the first attempt comes back
+    thin. Keeps the fullest result seen across attempts, not just the last.
+    """
+    options = serpapi_client.search_flights(route["origin"], route["destination"], target_date)
+    best_options, matched = serpapi_client.cheapest_distinct_airlines(options, preferred_window=preferred_window)
+
+    for attempt in range(1, RETRY_ATTEMPTS + 1):
+        if len(best_options) >= RETRY_MIN_DISTINCT_AIRLINES:
+            break
+        time.sleep(RETRY_DELAY_SECONDS)
+        retry_raw = serpapi_client.search_flights(route["origin"], route["destination"], target_date)
+        retry_options, retry_matched = serpapi_client.cheapest_distinct_airlines(
+            retry_raw, preferred_window=preferred_window,
+        )
+        if len(retry_options) > len(best_options):
+            print(f"[route {route['id']}] retry {attempt} found more options "
+                  f"({len(retry_options)} vs {len(best_options)}), using it")
+            best_options, matched = retry_options, retry_matched
+
+    return best_options, matched
+
+
 def check_route(route) -> None:
     target_date = _target_date(route)
-    options = serpapi_client.search_flights(route["origin"], route["destination"], target_date)
     preferred_window = time_windows.parse_time_window(route["preferred_time_window"])
-    best_options, matched_preferred_window = serpapi_client.cheapest_distinct_airlines(
-        options, preferred_window=preferred_window,
-    )
+    best_options, matched_preferred_window = _search_and_select(route, target_date, preferred_window)
     if not best_options:
         print(f"[route {route['id']}] no flights found for "
               f"{route['origin']}->{route['destination']} on {timeutils.format_dmy(target_date)}")
