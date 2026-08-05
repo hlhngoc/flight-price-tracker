@@ -9,3 +9,17 @@ export const TIME_WINDOW_PRESETS: string[] = [
   "Chiều (12:00-18:00)",
   "Tối (18:00-24:00)",
 ];
+
+const RANGE_PATTERN = /(\d{1,2}):(\d{2})\s*[-–]\s*(\d{1,2}):(\d{2})/;
+
+// Mirrors time_windows.py's parse_time_window: extracts (startHour, endHour)
+// from a "... (HH:MM-HH:MM)" label. Returns null if unparseable.
+export function parseTimeWindow(label: string | null | undefined): [number, number] | null {
+  if (!label) return null;
+  const m = RANGE_PATTERN.exec(label);
+  if (!m) return null;
+  const startH = Number(m[1]);
+  const endH = Number(m[3]);
+  if (!(startH >= 0 && startH <= 24 && endH >= 0 && endH <= 24)) return null;
+  return [startH, endH];
+}
