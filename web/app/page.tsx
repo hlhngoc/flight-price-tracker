@@ -119,7 +119,7 @@ export default async function DashboardPage() {
                 <td>
                   {e.ai_status === "pending" ? (
                     <span className="status status-pending" title="Gemini hết quota — tự động thử lại hàng ngày">
-                      Đang chờ AI
+                      Đang lựa chọn tuyến phù hợp
                     </span>
                   ) : (
                     <span className="status status-error" title="AI lỗi (không phải do hết quota) — cần tạo route thủ công">

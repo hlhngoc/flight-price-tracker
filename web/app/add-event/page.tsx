@@ -3,7 +3,6 @@
 import Link from "next/link";
 import { useState, type FormEvent } from "react";
 import { cityNameForCode, resolveAirportCode } from "@/lib/airports";
-import { formatDmy } from "@/lib/dateFormat";
 import { TIME_WINDOW_PRESETS } from "@/lib/timeWindows";
 
 interface ResolvedLocations {
@@ -15,16 +14,9 @@ interface ResolvedLocations {
   timeWindow: string;
 }
 
-interface CreatedRoute {
-  id: string;
-  flight_date: string | null;
-  preferred_time_window: string | null;
-  ai_reasoning: string | null;
-}
-
 interface EventResult {
   eventId: string;
-  createdRoutes: CreatedRoute[];
+  duplicateSlots?: number;
   pending?: boolean;
   message?: string;
 }
@@ -188,22 +180,11 @@ export default function AddEventPage() {
       {result && (
         <div className="result-card">
           <p>Đã tạo event #{result.eventId}.</p>
-          {result.pending ? (
-            <p>{result.message}</p>
-          ) : result.createdRoutes.length === 0 ? (
-            <p>Không có route mới nào được tạo (AI không trả về slot hợp lệ, hoặc trùng route đã có).</p>
-          ) : (
-            <>
-              <p>{result.createdRoutes.length} route được tạo:</p>
-              <ul>
-                {result.createdRoutes.map((r) => (
-                  <li key={r.id}>
-                    {formatDmy(r.flight_date)} — {r.preferred_time_window || "(chưa rõ khung giờ)"}
-                    {r.ai_reasoning && <div style={{ color: "var(--muted)" }}>{r.ai_reasoning}</div>}
-                  </li>
-                ))}
-              </ul>
-            </>
+          {result.pending && <p>{result.message}</p>}
+          {!result.pending && !!result.duplicateSlots && (
+            <p>
+              {result.duplicateSlots} slot bay trùng với route đang theo dõi (đã bỏ qua, không tạo thêm).
+            </p>
           )}
           <Link className="button" href="/">
             Về Dashboard

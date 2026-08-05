@@ -95,9 +95,13 @@ export async function POST(req: NextRequest) {
     ai_reasoning: string;
   }> = [];
 
+  let duplicateSlots = 0;
   for (const slot of slots) {
     const existing = await findMatchingRoute(originCode, destCode, slot.flight_date);
-    if (existing) continue;
+    if (existing) {
+      duplicateSlots++;
+      continue;
+    }
     const routeId = await addRoute({
       origin: originCode,
       destination: destCode,
@@ -120,5 +124,5 @@ export async function POST(req: NextRequest) {
   // routes just created instead of waiting for the next scheduled cron run.
   await triggerPriceCheckWorkflow(createdRoutes.map((r) => r.id));
 
-  return NextResponse.json({ eventId, createdRoutes }, { status: 201 });
+  return NextResponse.json({ eventId, createdRoutes, duplicateSlots }, { status: 201 });
 }
