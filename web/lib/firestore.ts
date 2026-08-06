@@ -53,14 +53,6 @@ export async function listEvents(): Promise<EventDoc[]> {
   return snap.docs.map((d) => ({ id: d.id, ...(d.data() as Omit<EventDoc, "id">) }));
 }
 
-// Only meaningful for events stuck at ai_status "pending"/"error" — those
-// never got routes created, so there's nothing else to cascade-delete. A
-// "done" event that already has routes must go through
-// deleteEventAndRoutes instead, so those routes don't end up orphaned.
-export async function deleteEvent(eventId: string): Promise<void> {
-  await firestoreDb().collection(EVENTS).doc(eventId).delete();
-}
-
 // Adds deletes for every route tied to eventId (and their price_history) to
 // a caller-supplied batch, without committing — shared by deleteEventAndRoutes
 // (which also deletes the event doc in the same commit) and

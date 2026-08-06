@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { resolveAirportCode } from "@/lib/airports";
-import { claimEventForPlanning, deleteEvent, deleteRoutesForEvent, getEvent, updateEvent } from "@/lib/firestore";
+import { claimEventForPlanning, deleteEventAndRoutes, deleteRoutesForEvent, getEvent, updateEvent } from "@/lib/firestore";
 import { planEventRoutes } from "@/lib/eventPlanning";
 import { TIME_WINDOW_PRESETS } from "@/lib/timeWindows";
 
@@ -123,6 +123,10 @@ export async function PATCH(req: NextRequest, { params }: { params: Promise<{ id
 
 export async function DELETE(_req: NextRequest, { params }: { params: Promise<{ id: string }> }) {
   const { id } = await params;
-  await deleteEvent(id);
+  // A "pending" event isn't necessarily route-less: planEventRoutes can
+  // create some routes and then hit a mid-loop failure, catching it and
+  // reverting the status to "pending" for the retry cron — so this must
+  // always cascade-delete, never assume "pending"/"error" means no routes.
+  await deleteEventAndRoutes(id);
   return NextResponse.json({ ok: true });
 }
