@@ -52,6 +52,13 @@ def _format_options_lines(options: list[dict]) -> list[str]:
         dep_part = f", giờ bay {dep}" if dep else ""
         note = "" if o.get("matched_preferred_window", True) else " — ngoài khung giờ mong muốn"
         lines.append(f"  - {o['airline']}: {o['price']:,}đ{dep_part}{note}")
+        return_dep = _format_departure_time(o.get("return_departure_time"))
+        if return_dep:
+            # Own sub-line rather than appended inline — the outbound line
+            # above is already fairly long (airline, price, time, window
+            # warning), so cramming return-leg info onto it would be hard
+            # to read on mobile.
+            lines.append(f"      ↩ Về: {return_dep} ({o.get('return_airline') or '?'})")
     return lines
 
 
@@ -59,7 +66,8 @@ def format_price_decrease(origin: str, destination: str, current_options: list[d
                            flight_date: date, preferred_time_window: str | None,
                            baseline: BaselineStats | None, new_low: bool,
                            event_name: str | None = None, days_to_event: int | None = None,
-                           ai_reasoning: str | None = None) -> tuple[str, str]:
+                           ai_reasoning: str | None = None,
+                           return_date: date | None = None) -> tuple[str, str]:
     current_price = min(o["price"] for o in current_options)
     pct = percent_change(last_price, current_price)
     delta = last_price - current_price
@@ -74,6 +82,10 @@ def format_price_decrease(origin: str, destination: str, current_options: list[d
     lines = [
         f"Chặng: {origin} → {destination}",
         date_line,
+    ]
+    if return_date:
+        lines.append(f"Ngày về: {_format_vn_date(return_date)}")
+    lines += [
         *_format_options_lines(current_options),
         f"Giá rẻ nhất lần trước: {last_price:,}đ",
         f"Giảm: {delta:,}đ ({pct:.0f}%)",
@@ -99,7 +111,8 @@ def format_price_decrease(origin: str, destination: str, current_options: list[d
 
 def format_price_increase(origin: str, destination: str, current_options: list[dict], last_price: int,
                            flight_date: date, event_name: str | None = None,
-                           days_to_event: int | None = None) -> tuple[str, str]:
+                           days_to_event: int | None = None,
+                           return_date: date | None = None) -> tuple[str, str]:
     current_price = min(o["price"] for o in current_options)
     pct = percent_change(last_price, current_price)
     subject = f"[Giá tăng] {origin} → {destination} ngày {flight_date.strftime('%d/%m')}, tăng {pct:.0f}%"
@@ -107,6 +120,10 @@ def format_price_increase(origin: str, destination: str, current_options: list[d
     lines = [
         f"Chặng: {origin} → {destination}",
         f"Ngày bay: {_format_vn_date(flight_date)}",
+    ]
+    if return_date:
+        lines.append(f"Ngày về: {_format_vn_date(return_date)}")
+    lines += [
         *_format_options_lines(current_options),
         f"Giá lần trước: {last_price:,}đ (+{pct:.0f}%)",
     ]

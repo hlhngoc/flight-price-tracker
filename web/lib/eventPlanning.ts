@@ -54,7 +54,9 @@ export async function planEventRoutes(event: EventDoc): Promise<PlanEventRoutesR
     const createdRoutes: CreatedRoute[] = [];
     let duplicateSlots = 0;
     for (const slot of slots) {
-      const existing = await findMatchingRoute(event.origin, destination, slot.flight_date);
+      // AI-picked event slots are always one-way at creation time (see plan
+      // scope) — return_date can only be added afterward via edit-route.
+      const existing = await findMatchingRoute(event.origin, destination, slot.flight_date, null);
       if (existing) {
         duplicateSlots++;
         continue;

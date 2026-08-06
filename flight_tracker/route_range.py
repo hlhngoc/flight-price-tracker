@@ -15,10 +15,13 @@ DEFAULT_RANGE_DAYS = 4
 def create_routes_around_date(origin: str, destination: str, target_date: date,
                                range_before: int = DEFAULT_RANGE_DAYS,
                                range_after: int = DEFAULT_RANGE_DAYS,
-                               preferred_time_window: str | None = None) -> list[str]:
+                               preferred_time_window: str | None = None,
+                               return_date: date | None = None) -> list[str]:
     """Creates one route per day from target_date - range_before to
     target_date + range_after (inclusive), all sharing the same optional
-    preferred_time_window. Dates that already have a matching non-expired
+    preferred_time_window and the same fixed return_date (if given — one
+    return date for the whole batch, not a fixed trip-length that shifts
+    per outbound date). Dates that already have a matching non-expired
     route (e.g. from a previous add-route call, or an event) are reused
     rather than duplicated. Returns the ids of routes newly created — not
     the full window, since existing ones are skipped.
@@ -26,13 +29,15 @@ def create_routes_around_date(origin: str, destination: str, target_date: date,
     if range_before < 0 or range_after < 0:
         raise ValueError("range_before/range_after must be >= 0")
 
+    return_date_iso = return_date.isoformat() if return_date else None
     created_route_ids: list[str] = []
     current = target_date - timedelta(days=range_before)
     end = target_date + timedelta(days=range_after)
 
     while current <= end:
         route_id, created = db.add_route_if_new(
-            origin, destination, current.isoformat(), preferred_time_window=preferred_time_window,
+            origin, destination, current.isoformat(),
+            return_date=return_date_iso, preferred_time_window=preferred_time_window,
         )
         if created:
             created_route_ids.append(route_id)

@@ -1,5 +1,5 @@
 import Link from "next/link";
-import { notFound, redirect } from "next/navigation";
+import { notFound } from "next/navigation";
 import { getRoute } from "@/lib/firestore";
 import EditRouteForm from "@/app/components/EditRouteForm";
 
@@ -9,10 +9,13 @@ export default async function EditRoutePage({ params }: { params: Promise<{ id: 
   const { id } = await params;
   const route = await getRoute(id);
   if (!route) notFound();
-  // Event-linked routes are AI-picked candidate slots for that event — they
-  // can only be edited by editing the event itself (which regenerates the
-  // whole slot set), so send stray direct links there instead of a dead end.
-  if (route.event_id) redirect(`/edit-event/${route.event_id}`);
+  // Event-linked routes are AI-picked candidate slots for that event —
+  // origin/destination/date/time-window can only be edited by editing the
+  // event itself (which regenerates the whole slot set). But return_date
+  // (round-trip) is a purely additive, AI-independent preference that IS
+  // editable here regardless — so unlike before, this page no longer
+  // redirects away for event-linked routes; EditRouteForm renders a
+  // reduced round-trip-only form for them instead.
 
   return (
     <main>

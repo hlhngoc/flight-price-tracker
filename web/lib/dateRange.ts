@@ -15,7 +15,8 @@ export async function createRoutesAroundDate(
   targetDateIso: string, // "YYYY-MM-DD"
   rangeBefore: number = DEFAULT_RANGE_DAYS,
   rangeAfter: number = DEFAULT_RANGE_DAYS,
-  preferredTimeWindow?: string | null
+  preferredTimeWindow?: string | null,
+  returnDate?: string | null // "YYYY-MM-DD" — one fixed return date shared by every route in the batch
 ): Promise<string[]> {
   if (rangeBefore < 0 || rangeAfter < 0) {
     throw new Error("rangeBefore/rangeAfter must be >= 0");
@@ -34,6 +35,7 @@ export async function createRoutesAroundDate(
       destination,
       flight_date: flightDate,
       preferred_time_window: preferredTimeWindow,
+      return_date: returnDate ?? null,
     });
     if (created) createdRouteIds.push(id);
   }

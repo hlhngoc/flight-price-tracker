@@ -140,6 +140,7 @@ export async function addRoute(input: {
   flight_date?: string | null;
   target_date_offset_days?: number;
   preferred_time_window?: string | null;
+  return_date?: string | null;
   event_id?: string | null;
   ai_reasoning?: string | null;
 }): Promise<string> {
@@ -151,6 +152,7 @@ export async function addRoute(input: {
       flight_date: input.flight_date ?? null,
       target_date_offset_days: input.target_date_offset_days ?? 30,
       preferred_time_window: input.preferred_time_window ?? null,
+      return_date: input.return_date ?? null,
       event_id: input.event_id ?? null,
       ai_reasoning: input.ai_reasoning ?? null,
       status: "tracking" satisfies RouteStatus,
@@ -159,10 +161,14 @@ export async function addRoute(input: {
   return ref.id;
 }
 
+// return_date is part of the identity match, not just an extra filter — a
+// one-way and a round-trip route for the same origin/destination/flight_date
+// are two distinct tracked routes, not duplicates of each other.
 export async function findMatchingRoute(
   origin: string,
   destination: string,
   flightDate: string,
+  returnDate: string | null,
   excludeRouteId?: string
 ): Promise<RouteDoc | null> {
   const snap = await firestoreDb()
@@ -170,6 +176,7 @@ export async function findMatchingRoute(
     .where("origin", "==", origin)
     .where("destination", "==", destination)
     .where("flight_date", "==", flightDate)
+    .where("return_date", "==", returnDate)
     .get();
   for (const doc of snap.docs) {
     if (doc.id === excludeRouteId) continue;
@@ -184,10 +191,11 @@ export async function addRouteIfNew(input: {
   destination: string;
   flight_date: string;
   preferred_time_window?: string | null;
+  return_date?: string | null;
   event_id?: string | null;
   ai_reasoning?: string | null;
 }): Promise<{ id: string; created: boolean }> {
-  const existing = await findMatchingRoute(input.origin, input.destination, input.flight_date);
+  const existing = await findMatchingRoute(input.origin, input.destination, input.flight_date, input.return_date ?? null);
   if (existing) return { id: existing.id, created: false };
   const id = await addRoute(input);
   return { id, created: true };
@@ -211,7 +219,10 @@ export async function setRouteStatus(routeId: string, status: RouteStatus): Prom
 export async function updateRoute(
   routeId: string,
   fields: Partial<
-    Pick<RouteDoc, "origin" | "destination" | "flight_date" | "target_date_offset_days" | "preferred_time_window">
+    Pick<
+      RouteDoc,
+      "origin" | "destination" | "flight_date" | "target_date_offset_days" | "preferred_time_window" | "return_date"
+    >
   >
 ): Promise<void> {
   await firestoreDb().collection(ROUTES).doc(routeId).update(fields);

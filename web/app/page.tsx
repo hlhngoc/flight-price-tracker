@@ -45,6 +45,7 @@ function ChangCell({ route }: { route: RouteDoc }) {
       {route.preferred_time_window && (
         <div className="subtext">Mong muốn: {route.preferred_time_window}</div>
       )}
+      {route.return_date && <div className="subtext">⇄ Khứ hồi, về {formatDmy(route.return_date)}</div>}
     </>
   );
 }
@@ -57,6 +58,12 @@ function PriceRow({ price }: { price: PriceRecord }) {
       {isFallback && (
         <div className="window-warning" title="Không có chuyến trong khung giờ mong muốn">
           ⚠ ngoài khung giờ mong muốn
+        </div>
+      )}
+      {price.return_departure_time && (
+        <div className="subtext">
+          ↩ Về: {formatTime(price.return_departure_time)}
+          {price.return_airline ? ` (${price.return_airline})` : ""}
         </div>
       )}
     </td>

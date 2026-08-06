@@ -22,6 +22,7 @@ interface RoutePatchBody {
   flight_date?: string | null;
   target_date_offset_days?: number;
   preferred_time_window?: string | null;
+  return_date?: string | null; // "YYYY-MM-DD", null = one-way — the only field editable on an event-linked route
 }
 
 export async function PATCH(req: NextRequest, { params }: { params: Promise<{ id: string }> }) {
@@ -45,29 +46,19 @@ export async function PATCH(req: NextRequest, { params }: { params: Promise<{ id
     await setRouteStatus(id, body.status as RouteStatus);
   }
 
-  const hasFieldEdit =
+  const hasStructuralFieldEdit =
     body.origin !== undefined ||
     body.destination !== undefined ||
     body.flight_date !== undefined ||
     body.target_date_offset_days !== undefined ||
     body.preferred_time_window !== undefined;
+  const hasReturnDateEdit = body.return_date !== undefined;
 
-  if (!hasFieldEdit) {
+  if (!hasStructuralFieldEdit && !hasReturnDateEdit) {
     if (body.status === undefined) {
       return NextResponse.json({ error: "No fields to update" }, { status: 400 });
     }
     return NextResponse.json({ ok: true });
-  }
-
-  // Event-linked routes are one of the AI's candidate slots for that event —
-  // editing them directly (bypassing the AI) would desync them from the
-  // event; those must go through PATCH /api/events/[eventId] instead, which
-  // regenerates the whole slot set.
-  if (route.event_id) {
-    return NextResponse.json(
-      { error: "Route này thuộc 1 event — sửa qua trang sửa sự kiện." },
-      { status: 400 }
-    );
   }
 
   if (body.preferred_time_window && !TIME_WINDOW_PRESETS.includes(body.preferred_time_window)) {
@@ -88,14 +79,58 @@ export async function PATCH(req: NextRequest, { params }: { params: Promise<{ id
     body.target_date_offset_days !== undefined ? body.target_date_offset_days : route.target_date_offset_days;
   const preferredTimeWindow =
     body.preferred_time_window !== undefined ? body.preferred_time_window || null : route.preferred_time_window;
+  const returnDate = body.return_date !== undefined ? body.return_date : route.return_date ?? null;
+
+  // Event-linked routes are one of the AI's candidate slots for that event —
+  // editing origin/destination/date/time-window directly (bypassing the AI)
+  // would desync them from the event; those must go through
+  // PATCH /api/events/[eventId] instead, which regenerates the whole slot
+  // set. return_date is the one exception — it's a purely additive,
+  // AI-independent preference, so it's allowed here regardless of event_id.
+  // Gated on an actual-VALUE diff rather than "is the key present in the
+  // body": a request that re-sends identical structural values (e.g. a
+  // form re-serializing its whole state instead of a return_date-only
+  // diff) is a no-op on those fields, not an error — presence-based gating
+  // would false-reject that case.
+  if (route.event_id) {
+    const structuralChanged =
+      origin !== route.origin ||
+      destination !== route.destination ||
+      flightDate !== route.flight_date ||
+      targetDateOffsetDays !== route.target_date_offset_days ||
+      preferredTimeWindow !== route.preferred_time_window;
+    if (structuralChanged) {
+      return NextResponse.json(
+        { error: "Route này thuộc 1 event — sửa qua trang sửa sự kiện." },
+        { status: 400 }
+      );
+    }
+  }
+
+  if (returnDate) {
+    if (!/^\d{4}-\d{2}-\d{2}$/.test(returnDate)) {
+      return NextResponse.json({ error: "Ngày về không hợp lệ." }, { status: 400 });
+    }
+    if (!flightDate) {
+      return NextResponse.json(
+        { error: "Route dài hạn không có ngày cố định, không hỗ trợ khứ hồi." },
+        { status: 400 }
+      );
+    }
+    if (returnDate <= flightDate) {
+      return NextResponse.json({ error: "Ngày về phải sau ngày bay." }, { status: 400 });
+    }
+  }
 
   // Duplicate guard only applies when the edited route ends up with a
   // concrete flight_date — findMatchingRoute queries an exact flight_date
   // string, so it can never match (and thus never dedupe against) a legacy
   // offset-based route (flight_date: null); editing target_date_offset_days
   // alone has no duplicate check, same as the create flow for those routes.
+  // return_date is part of the identity match too, so a one-way and a
+  // round-trip route on the same flight_date don't collide.
   if (flightDate) {
-    const existing = await findMatchingRoute(origin, destination, flightDate, id);
+    const existing = await findMatchingRoute(origin, destination, flightDate, returnDate, id);
     if (existing) {
       return NextResponse.json(
         { error: "Đã có route khác đang theo dõi đúng chặng và ngày bay này." },
@@ -110,6 +145,7 @@ export async function PATCH(req: NextRequest, { params }: { params: Promise<{ id
     flight_date: flightDate,
     target_date_offset_days: targetDateOffsetDays,
     preferred_time_window: preferredTimeWindow,
+    return_date: returnDate,
   });
 
   return NextResponse.json({ ok: true });

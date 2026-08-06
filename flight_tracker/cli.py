@@ -122,6 +122,11 @@ def cmd_list_events(_args) -> None:
               f"({e['origin']} -> {e['location']}, flex={e['flexibility_days']}d)")
 
 
+def cmd_backfill_return_date(_args) -> None:
+    updated = db.backfill_route_return_date_field()
+    print(f"Backfilled return_date on {updated} route(s) missing the field.")
+
+
 def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(prog="flight_tracker")
     sub = parser.add_subparsers(dest="command", required=True)
@@ -175,6 +180,11 @@ def build_parser() -> argparse.ArgumentParser:
     sub.add_parser("retry-pending-events",
                     help="Retry AI slot generation for events stuck pending (e.g. Gemini quota)") \
         .set_defaults(func=cmd_retry_pending_events)
+
+    sub.add_parser("backfill-return-date",
+                    help="One-time backfill: set return_date=null on routes missing the field "
+                         "(run once before enabling round-trip support)") \
+        .set_defaults(func=cmd_backfill_return_date)
 
     return parser
 

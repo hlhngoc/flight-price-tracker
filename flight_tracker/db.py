@@ -47,6 +47,7 @@ def _doc_to_dict(doc) -> Optional[dict]:
 
 def add_route(origin: str, destination: str, target_date_offset_days: int = 30,
               flight_date: Optional[str] = None, preferred_time_window: Optional[str] = None,
+              return_date: Optional[str] = None,
               event_id: Optional[str] = None, ai_reasoning: Optional[str] = None) -> str:
     doc_ref = db().collection(ROUTES).document()
     doc_ref.set({
@@ -55,6 +56,7 @@ def add_route(origin: str, destination: str, target_date_offset_days: int = 30,
         "flight_date": flight_date,
         "target_date_offset_days": target_date_offset_days,
         "preferred_time_window": preferred_time_window,
+        "return_date": return_date,
         "event_id": event_id,
         "ai_reasoning": ai_reasoning,
         "status": "tracking",
@@ -63,16 +65,20 @@ def add_route(origin: str, destination: str, target_date_offset_days: int = 30,
     return doc_ref.id
 
 
-def find_matching_route(origin: str, destination: str, flight_date: str) -> Optional[dict]:
+def find_matching_route(origin: str, destination: str, flight_date: str,
+                         return_date: Optional[str] = None) -> Optional[dict]:
     """Existing non-expired route already tracking this exact origin/
-    destination/date, regardless of which event (if any) created it —
-    avoids inserting duplicate routes when two events land on the same slot.
+    destination/date (+return_date, if given), regardless of which event
+    (if any) created it — avoids inserting duplicate routes when two events
+    land on the same slot. return_date is part of the identity match: a
+    one-way and a round-trip route for the same outbound date are distinct.
     """
     query = (
         db().collection(ROUTES)
         .where(filter=FieldFilter("origin", "==", origin))
         .where(filter=FieldFilter("destination", "==", destination))
         .where(filter=FieldFilter("flight_date", "==", flight_date))
+        .where(filter=FieldFilter("return_date", "==", return_date))
     )
     for doc in query.stream():
         data = _doc_to_dict(doc)
@@ -81,16 +87,19 @@ def find_matching_route(origin: str, destination: str, flight_date: str) -> Opti
     return None
 
 
-def add_route_if_new(origin: str, destination: str, flight_date: str, **kwargs) -> tuple[str, bool]:
-    """Insert a route for this origin/destination/flight_date unless a
-    matching non-expired one already exists. Returns (route_id, created) —
-    created is False when an existing route was reused instead of a new
-    insert, so callers can skip duplicate SerpApi queries for that date.
+def add_route_if_new(origin: str, destination: str, flight_date: str,
+                      return_date: Optional[str] = None, **kwargs) -> tuple[str, bool]:
+    """Insert a route for this origin/destination/flight_date/return_date
+    unless a matching non-expired one already exists. Returns
+    (route_id, created) — created is False when an existing route was
+    reused instead of a new insert, so callers can skip duplicate SerpApi
+    queries for that date.
     """
-    existing = find_matching_route(origin, destination, flight_date)
+    existing = find_matching_route(origin, destination, flight_date, return_date)
     if existing is not None:
         return existing["id"], False
-    route_id = add_route(origin=origin, destination=destination, flight_date=flight_date, **kwargs)
+    route_id = add_route(origin=origin, destination=destination, flight_date=flight_date,
+                          return_date=return_date, **kwargs)
     return route_id, True
 
 
@@ -109,6 +118,47 @@ def get_route(route_id: str) -> Optional[dict]:
 
 def set_route_status(route_id: str, status: str) -> None:
     db().collection(ROUTES).document(route_id).update({"status": status})
+
+
+def backfill_route_return_date_field(page_size: int = 300) -> int:
+    """One-time backfill for preferred_routes docs written before
+    return_date existed. find_matching_route/add_route_if_new now do
+    `.where("return_date", "==", return_date)`, and a Firestore `== None`
+    filter only matches docs where the field is present and explicitly
+    null — not docs where it's simply absent. Firestore has no operator for
+    "field does not exist" server-side, so this is a full paginated scan
+    (ordered by document id, cursor via start_after) with client-side
+    filtering, not a targeted query. Idempotent — safe to run again;
+    becomes a no-op once every doc has the field. Returns the number of
+    docs updated. Exposed via `python -m flight_tracker.cli
+    backfill-return-date`; run once, before the cron or a redeployed web
+    app start creating/matching routes with the new return_date-aware
+    dedup query (see the round-trip feature's rollout notes) — otherwise
+    the same silent-duplicate gap this closes can still occur for that
+    window.
+    """
+    collection = db().collection(ROUTES)
+    updated = 0
+    last_doc = None
+    while True:
+        query = collection.order_by("__name__").limit(page_size)
+        if last_doc is not None:
+            query = query.start_after(last_doc)
+        page = list(query.stream())
+        if not page:
+            break
+        missing = [doc for doc in page if "return_date" not in doc.to_dict()]
+        for i in range(0, len(missing), 500):  # Firestore batch-write limit
+            chunk = missing[i:i + 500]
+            batch = db().batch()
+            for doc in chunk:
+                batch.update(doc.reference, {"return_date": None})
+            batch.commit()
+            updated += len(chunk)
+        last_doc = page[-1]
+        if len(page) < page_size:
+            break
+    return updated
 
 
 def expire_due_event_routes(now_iso: str) -> int:
@@ -201,11 +251,17 @@ def claim_event_for_planning(event_id: str) -> bool:
 
 def add_price_record(route_id: str, flight_date: str, departure_time: Optional[str],
                       price: int, airline: Optional[str], checked_at: str,
-                      matched_preferred_window: bool) -> str:
+                      matched_preferred_window: bool,
+                      return_departure_time: Optional[str] = None,
+                      return_airline: Optional[str] = None) -> str:
     """matched_preferred_window: True if this result's departure_time falls
     inside the route's preferred_time_window (or the route has none set —
     trivially satisfied); False if it's a fallback shown despite not
     matching the route's stated preference (see route_tracking.py).
+
+    return_departure_time/return_airline: only set for round-trip routes —
+    the resolved return leg's departure time/airline (see
+    route_tracking.py's ResolvedPriceOption). None for one-way routes.
     """
     doc_ref = db().collection(PRICE_HISTORY).document()
     doc_ref.set({
@@ -216,6 +272,8 @@ def add_price_record(route_id: str, flight_date: str, departure_time: Optional[s
         "airline": airline,
         "checked_at": checked_at,
         "matched_preferred_window": matched_preferred_window,
+        "return_departure_time": return_departure_time,
+        "return_airline": return_airline,
     })
     return doc_ref.id
 

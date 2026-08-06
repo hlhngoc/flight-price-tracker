@@ -19,6 +19,7 @@ interface RouteRequestBody {
   rangeAfter?: number;
   offsetDays?: number; // legacy: single rolling today+N days route
   timeWindow?: string; // optional, must be one of TIME_WINDOW_PRESETS
+  returnDate?: string; // "YYYY-MM-DD", round-trip — only valid alongside targetDate
 }
 
 export async function POST(req: NextRequest) {
@@ -57,8 +58,30 @@ export async function POST(req: NextRequest) {
       return NextResponse.json({ error: "Số ngày track trước/sau phải >= 0." }, { status: 400 });
     }
 
+    let returnDate: string | null = null;
+    if (body.returnDate) {
+      if (!/^\d{4}-\d{2}-\d{2}$/.test(body.returnDate)) {
+        return NextResponse.json({ error: "Ngày về không hợp lệ." }, { status: 400 });
+      }
+      // Compare against the LATEST outbound date the batch will generate
+      // (targetDate + rangeAfter), not targetDate itself — routes near the
+      // right edge of the ±range window would otherwise accept a return
+      // date that's before-or-equal to their own flight_date.
+      const targetDateObj = new Date(`${body.targetDate}T00:00:00Z`);
+      const maxFlightDateIso = new Date(targetDateObj.getTime() + rangeAfter * 86400000)
+        .toISOString()
+        .slice(0, 10);
+      if (body.returnDate <= maxFlightDateIso) {
+        return NextResponse.json(
+          { error: "Ngày về phải sau ngày bay muộn nhất trong khoảng theo dõi." },
+          { status: 400 }
+        );
+      }
+      returnDate = body.returnDate;
+    }
+
     const routeIds = await createRoutesAroundDate(
-      originCode, destCode, body.targetDate, rangeBefore, rangeAfter, timeWindow,
+      originCode, destCode, body.targetDate, rangeBefore, rangeAfter, timeWindow, returnDate,
     );
     return NextResponse.json({ routeIds }, { status: 201 });
   }

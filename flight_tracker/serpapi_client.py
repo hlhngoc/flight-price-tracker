@@ -24,6 +24,11 @@ class FlightOption:
     departure_time: str   # "YYYY-MM-DD HH:MM"
     arrival_time: str     # "YYYY-MM-DD HH:MM"
     duration_minutes: Optional[int]
+    # Only present on round-trip (type=1) outbound-leg entries — pass it to
+    # fetch_return_leg to get the matching return-leg options + the final
+    # combined round-trip price for that specific outbound option. Always
+    # None for one-way (type=2) results.
+    departure_token: Optional[str] = None
 
 
 def _parse_flights(payload: dict) -> list[FlightOption]:
@@ -41,13 +46,20 @@ def _parse_flights(payload: dict) -> list[FlightOption]:
                     departure_time=first_leg.get("departure_airport", {}).get("time", ""),
                     arrival_time=last_leg.get("arrival_airport", {}).get("time", ""),
                     duration_minutes=entry.get("total_duration"),
+                    departure_token=entry.get("departure_token"),
                 )
             )
     return options
 
 
-def search_flights(origin: str, destination: str, flight_date: date) -> list[FlightOption]:
-    """One-way search for the cheapest options on a given date.
+def search_flights(origin: str, destination: str, flight_date: date,
+                    return_date: Optional[date] = None) -> list[FlightOption]:
+    """Search for the cheapest options on a given outbound date — one-way
+    by default, or round-trip (outbound leg only) when return_date is
+    given. For round trip, each returned option's `price` is not yet the
+    final combined price and its `departure_token` must be passed to
+    fetch_return_leg to resolve the actual return leg + final price (see
+    that function's docstring).
 
     Returns an empty list if SerpApi has nothing for that date (rather than
     raising) so callers can decide whether to skip vs. hard-fail.
@@ -58,7 +70,45 @@ def search_flights(origin: str, destination: str, flight_date: date) -> list[Fli
         "departure_id": origin,
         "arrival_id": destination,
         "outbound_date": flight_date.isoformat(),
-        "type": "2",  # one-way
+        "type": "1" if return_date else "2",  # 1 = round trip, 2 = one-way
+        "currency": "VND",
+        "hl": "vi",
+        "gl": "vn",
+    }
+    if return_date:
+        params["return_date"] = return_date.isoformat()
+    resp = requests.get(SERPAPI_URL, params=params, timeout=30)
+    resp.raise_for_status()
+    payload = resp.json()
+
+    error = payload.get("error")
+    if error:
+        raise SerpApiError(f"SerpApi error for {origin}->{destination} on {flight_date}: {error}")
+
+    return _parse_flights(payload)
+
+
+def fetch_return_leg(origin: str, destination: str, outbound_date: date, return_date: date,
+                      departure_token: str) -> list[FlightOption]:
+    """Second call in the round-trip flow: given a departure_token from one
+    of search_flights' round-trip outbound options, fetches the matching
+    return-leg options for that specific outbound choice. Each returned
+    option's `departure_time`/`airline` describe the RETURN leg, and
+    `price` is now the final combined round-trip price for outbound+this
+    return option — not the outbound-only price search_flights returned.
+
+    Returns an empty list if SerpApi has nothing for this token (rather
+    than raising), same convention as search_flights.
+    """
+    params = {
+        "engine": "google_flights",
+        "api_key": config.serpapi_key(),
+        "departure_id": origin,
+        "arrival_id": destination,
+        "outbound_date": outbound_date.isoformat(),
+        "return_date": return_date.isoformat(),
+        "type": "1",
+        "departure_token": departure_token,
         "currency": "VND",
         "hl": "vi",
         "gl": "vn",
@@ -69,7 +119,10 @@ def search_flights(origin: str, destination: str, flight_date: date) -> list[Fli
 
     error = payload.get("error")
     if error:
-        raise SerpApiError(f"SerpApi error for {origin}->{destination} on {flight_date}: {error}")
+        raise SerpApiError(
+            f"SerpApi error resolving return leg for {origin}->{destination} "
+            f"({outbound_date} / {return_date}): {error}"
+        )
 
     return _parse_flights(payload)
 
