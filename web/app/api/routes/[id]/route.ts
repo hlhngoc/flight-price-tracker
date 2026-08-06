@@ -151,14 +151,28 @@ export async function PATCH(req: NextRequest, { params }: { params: Promise<{ id
   return NextResponse.json({ ok: true });
 }
 
-export async function DELETE(_req: NextRequest, { params }: { params: Promise<{ id: string }> }) {
+export async function DELETE(req: NextRequest, { params }: { params: Promise<{ id: string }> }) {
   const { id } = await params;
   const route = await getRoute(id);
+
+  // scope: "single" lets the caller opt out of the event cascade below and
+  // delete just this one route — only meaningful when the route has an
+  // event_id; ignored (there's nothing to opt out of) otherwise. Body is
+  // optional so old callers with no body keep the default cascade behavior.
+  let scope: string | undefined;
+  try {
+    const body = await req.json();
+    scope = body?.scope;
+  } catch {
+    // no body / invalid JSON — treat as no scope specified
+  }
+
   // A route created from an event represents one of the AI's candidate
-  // slots for that event — deleting it means the user wants to drop the
-  // whole event, not just this slot, so cascade to the event and its other
-  // routes too instead of leaving them orphaned.
-  if (route?.event_id) {
+  // slots for that event — by default, deleting it means the user wants to
+  // drop the whole event, not just this slot, so cascade to the event and
+  // its other routes too instead of leaving them orphaned. scope: "single"
+  // overrides this to delete just the one route.
+  if (route?.event_id && scope !== "single") {
     await deleteEventAndRoutes(route.event_id);
   } else {
     await deleteRoute(id);

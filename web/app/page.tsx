@@ -178,7 +178,7 @@ export default async function DashboardPage() {
                   <Link className="button-link" href={r.event_id ? `/edit-event/${r.event_id}` : `/edit-route/${r.id}`}>
                     Sửa
                   </Link>
-                  <DeleteRouteButton routeId={r.id} hasEvent={!!r.event_id} />
+                  <DeleteRouteButton routeId={r.id} eventName={event?.event_name} />
                 </div>
               );
 
