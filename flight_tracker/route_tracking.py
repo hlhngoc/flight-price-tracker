@@ -24,6 +24,24 @@ RETRY_MIN_DISTINCT_AIRLINES = 2
 RETRY_ATTEMPTS = 2
 RETRY_DELAY_SECONDS = 5
 
+# Round-trip cost-reduction flow (see _check_round_trip): airlines generally
+# don't offer bundled round-trip discounts across two *different* carriers
+# (no interline fare agreement) — this is an industry-standard assumption,
+# not verified empirically against VNA/VietJet/Bamboo specifically. If a
+# mixed-carrier round trip is ever observed priced meaningfully below the
+# sum of its two one-way legs, that contradicts this assumption — flag it,
+# don't silently adjust the logic here.
+#
+# For a *same*-carrier round trip, a real bundle discount is plausible, so
+# its true price is periodically re-verified against SerpApi's actual
+# round-trip fare (2-step departure_token flow) rather than trusted as
+# "sum of two one-way fast-flights legs" indefinitely. Between
+# verifications, a cheaper combined price is still allowed to surface (a
+# real price drop shouldn't wait out the interval), but a combined price
+# that's *not* cheaper than the last known bundle price is discarded —
+# it's likely just missing the bundle discount, not a genuine change.
+BUNDLE_VERIFY_INTERVAL_DAYS = 5
+
 
 def _target_date(route) -> date:
     if route["flight_date"]:
@@ -41,23 +59,30 @@ def _return_date(route) -> Optional[date]:
 
 @dataclass
 class ResolvedPriceOption:
-    """The uniform shape check_route operates on downstream of
-    _search_and_select/_resolve_return_legs, for both one-way and
-    round-trip routes. For one-way, return_airline/return_departure_time
+    """The uniform shape _write_and_notify operates on, for both one-way
+    and round-trip routes. For one-way, return_airline/return_departure_time
     stay None and `price` is exactly FlightOption.price. For round-trip,
-    `price` is the FINAL combined round-trip price from
-    serpapi_client.fetch_return_leg — never the outbound-only price the
-    same candidate had in _search_and_select's output; those are two
-    different numbers for the same candidate, and everything from here on
-    (price-comparison, price_history, email) must only ever read `price`
-    off this dataclass, not fall back to the original outbound
-    FlightOption.
+    `price` is always the FINAL combined round-trip price — either the two
+    independent fast-flights legs summed (_check_round_trip's "combined"
+    path) or the true bundle fare from serpapi_client.fetch_return_leg (its
+    "bundle" path, via _fetch_serpapi_bundle) — never an outbound-only
+    price. Everything downstream (price-comparison, price_history, email)
+    must only ever read `price` off this dataclass.
     """
     price: int
     airline: str
     departure_time: str
     return_airline: Optional[str] = None
     return_departure_time: Optional[str] = None
+
+
+def _days_since(iso_timestamp: str) -> float:
+    """iso_timestamp must be one of our own timeutils.now_utc_iso() strings
+    (UTC-aware, explicit offset) — see route_tracking's only writer of
+    last_bundle_verified_at, db.set_route_last_bundle_verified_at.
+    """
+    then = datetime.fromisoformat(iso_timestamp)
+    return (datetime.now(timezone.utc) - then).total_seconds() / 86400
 
 
 def _days_to_event(event) -> int:
@@ -151,37 +176,19 @@ def _resolve_return_legs(route, target_date: date, return_date: date,
     return resolved
 
 
-def check_route(route) -> None:
-    target_date = _target_date(route)
-    return_date = _return_date(route)
-    preferred_window = time_windows.parse_time_window(route["preferred_time_window"])
-    outbound_options, matched_preferred_window = _search_and_select(route, target_date, return_date, preferred_window)
-    if not outbound_options:
-        print(f"[route {route['id']}] no flights found for "
-              f"{route['origin']}->{route['destination']} on {timeutils.format_dmy(target_date)}")
-        return
-
-    if preferred_window is not None and not matched_preferred_window:
-        print(f"[route {route['id']}] no flights within preferred window "
-              f"'{route['preferred_time_window']}' — falling back to cheapest overall")
-
-    if return_date is not None:
-        best_options = _resolve_return_legs(route, target_date, return_date, outbound_options)
-        if not best_options:
-            print(f"[route {route['id']}] round-trip return-leg resolution came back empty for "
-                  f"{route['origin']}->{route['destination']} on {timeutils.format_dmy(target_date)} "
-                  f"(return {timeutils.format_dmy(return_date)}) — treating as no flights found")
-            return
-    else:
-        best_options = [
-            ResolvedPriceOption(price=opt.price, airline=opt.airline, departure_time=opt.departure_time)
-            for opt in outbound_options
-        ]
-
-    checked_at = timeutils.now_utc_iso()
+def _write_and_notify(route, checked_at: str, options: list[ResolvedPriceOption], matched_preferred_window: bool,
+                       target_date: date, return_date: Optional[date],
+                       price_source: Optional[str] = None) -> None:
+    """Shared tail for both one-way and round-trip checks: writes one
+    price_history row per option, compares the cheapest against the last
+    check, and emails on a price change. options holds up to 2 candidates
+    for one-way (cheapest-distinct-airline pairs) or exactly 1 for
+    round-trip (see _check_round_trip) — price_source is round-trip-only,
+    left None for one-way writes.
+    """
     last_price_row = db.get_last_price(route["id"], before_checked_at=checked_at)
 
-    for opt in best_options:
+    for opt in options:
         db.add_price_record(
             route_id=route["id"],
             flight_date=target_date.isoformat(),
@@ -192,8 +199,9 @@ def check_route(route) -> None:
             matched_preferred_window=matched_preferred_window,
             return_departure_time=opt.return_departure_time,
             return_airline=opt.return_airline,
+            price_source=price_source,
         )
-    current_price = min(opt.price for opt in best_options)
+    current_price = min(opt.price for opt in options)
 
     if last_price_row is None:
         print(f"[route {route['id']}] first check for this route, nothing to compare yet")
@@ -221,7 +229,7 @@ def check_route(route) -> None:
             "return_airline": opt.return_airline,
             "return_departure_time": opt.return_departure_time,
         }
-        for opt in best_options
+        for opt in options
     ]
 
     if change == "decrease":
@@ -243,6 +251,146 @@ def check_route(route) -> None:
 
     email_sender.send_email(subject, body)
     db.log_notification(route["id"], notif_type, timeutils.now_utc_iso(), body)
+
+
+def _cheapest_leg_option(origin: str, destination: str, leg_date: date,
+                          preferred_window: Optional[tuple[int, int]]) -> tuple[Optional["serpapi_client.FlightOption"], bool]:
+    """Single cheapest option for one leg, searched as a plain one-way query
+    (via flight_provider — respects FLIGHT_PROVIDER and its fast-flights/
+    SerpApi fallback same as everything else). Returns (None, False) if the
+    leg has no options at all.
+    """
+    options = flight_provider.search_flights(origin, destination, leg_date)
+    picked, matched = flight_provider.cheapest_distinct_airlines(options, preferred_window=preferred_window, max_results=1)
+    return (picked[0], matched) if picked else (None, matched)
+
+
+def _resolve_round_trip_legs(route, target_date: date, return_date: date, preferred_window):
+    """Fetches the outbound and return legs independently — the core of the
+    round-trip cost-reduction flow (see BUNDLE_VERIFY_INTERVAL_DAYS): two
+    free fast-flights calls instead of SerpApi's paid 2-step flow. Mirrors
+    one-way's convention of only ever filtering by preferred_window on the
+    OUTBOUND leg — the return leg has never been time-filtered here, same
+    as the pre-existing SerpApi _resolve_return_legs, which also just takes
+    the globally cheapest return-leg option.
+    """
+    outbound_option, matched = _cheapest_leg_option(route["origin"], route["destination"], target_date, preferred_window)
+    return_option, _ = _cheapest_leg_option(route["destination"], route["origin"], return_date, None)
+    return outbound_option, return_option, matched
+
+
+def _fetch_serpapi_bundle(route, target_date: date, return_date: date, preferred_window) -> Optional[ResolvedPriceOption]:
+    """Periodic re-verification of a same-carrier round trip's actual
+    bundle-discounted price, via SerpApi's existing 2-step departure_token
+    flow (_search_and_select + _resolve_return_legs — unchanged, still
+    SerpApi-only regardless of FLIGHT_PROVIDER). Only called when due per
+    BUNDLE_VERIFY_INTERVAL_DAYS, so this is the one place round-trip
+    checking still spends SerpApi quota. Returns None if either step comes
+    back empty.
+    """
+    outbound_options, _ = _search_and_select(route, target_date, return_date, preferred_window)
+    if not outbound_options:
+        return None
+    resolved = _resolve_return_legs(route, target_date, return_date, outbound_options)
+    if not resolved:
+        return None
+    return min(resolved, key=lambda o: o.price)
+
+
+def _check_round_trip(route, target_date: date, return_date: date, preferred_window) -> None:
+    """Round-trip pricing via fast-flights, with SerpApi used only to
+    verify same-carrier bundle discounts (see BUNDLE_VERIFY_INTERVAL_DAYS
+    for the reasoning). Replaces the old always-SerpApi round-trip flow.
+    """
+    outbound_option, return_option, matched_preferred_window = _resolve_round_trip_legs(
+        route, target_date, return_date, preferred_window,
+    )
+    if outbound_option is None or return_option is None:
+        print(f"[route {route['id']}] no flights found for one or both legs of round trip "
+              f"{route['origin']}->{route['destination']} ({timeutils.format_dmy(target_date)} outbound / "
+              f"{timeutils.format_dmy(return_date)} return)")
+        return
+
+    if preferred_window is not None and not matched_preferred_window:
+        print(f"[route {route['id']}] no outbound flights within preferred window "
+              f"'{route['preferred_time_window']}' — falling back to cheapest overall")
+
+    combined_price = outbound_option.price + return_option.price
+    combined_option = ResolvedPriceOption(
+        price=combined_price,
+        airline=outbound_option.airline,
+        departure_time=outbound_option.departure_time,
+        return_airline=return_option.airline,
+        return_departure_time=return_option.departure_time,
+    )
+    checked_at = timeutils.now_utc_iso()
+
+    if outbound_option.airline != return_option.airline:
+        # Different carriers: no interline bundle discount to check for —
+        # see BUNDLE_VERIFY_INTERVAL_DAYS' docstring. Combined price is
+        # final, no SerpApi call needed.
+        _write_and_notify(route, checked_at, [combined_option], matched_preferred_window,
+                           target_date, return_date, price_source="combined")
+        return
+
+    last_verified_at = route.get("last_bundle_verified_at")
+    needs_verification = last_verified_at is None or _days_since(last_verified_at) > BUNDLE_VERIFY_INTERVAL_DAYS
+
+    if needs_verification:
+        bundle_option = _fetch_serpapi_bundle(route, target_date, return_date, preferred_window)
+        if bundle_option is None:
+            print(f"[route {route['id']}] same-carrier round trip but SerpApi bundle verification came back "
+                  "empty — using combined fast-flights price for this check instead")
+            _write_and_notify(route, checked_at, [combined_option], matched_preferred_window,
+                               target_date, return_date, price_source="combined")
+            return
+        db.set_route_last_bundle_verified_at(route["id"], checked_at)
+        _write_and_notify(route, checked_at, [bundle_option], matched_preferred_window,
+                           target_date, return_date, price_source="bundle")
+        return
+
+    last_price_row = db.get_latest_price(route["id"])
+    last_bundle_price = last_price_row["price"] if last_price_row else None
+    if last_bundle_price is not None and combined_price < last_bundle_price:
+        # A cheaper price surfaced between verifications — worth trusting
+        # and worth re-verifying against SerpApi again soon, so treat this
+        # as a fresh signal (reset the interval) rather than waiting out
+        # the full BUNDLE_VERIFY_INTERVAL_DAYS from the original check.
+        db.set_route_last_bundle_verified_at(route["id"], checked_at)
+        _write_and_notify(route, checked_at, [combined_option], matched_preferred_window,
+                           target_date, return_date, price_source="combined")
+        return
+
+    print(f"[route {route['id']}] same-carrier round trip, verified within the last "
+          f"{BUNDLE_VERIFY_INTERVAL_DAYS}d — combined fast-flights price {combined_price:,} isn't cheaper than "
+          f"the last known bundle price {last_bundle_price:,}, keeping it as authoritative; no new record written")
+
+
+def check_route(route) -> None:
+    target_date = _target_date(route)
+    return_date = _return_date(route)
+    preferred_window = time_windows.parse_time_window(route["preferred_time_window"])
+
+    if return_date is not None:
+        _check_round_trip(route, target_date, return_date, preferred_window)
+        return
+
+    outbound_options, matched_preferred_window = _search_and_select(route, target_date, None, preferred_window)
+    if not outbound_options:
+        print(f"[route {route['id']}] no flights found for "
+              f"{route['origin']}->{route['destination']} on {timeutils.format_dmy(target_date)}")
+        return
+
+    if preferred_window is not None and not matched_preferred_window:
+        print(f"[route {route['id']}] no flights within preferred window "
+              f"'{route['preferred_time_window']}' — falling back to cheapest overall")
+
+    best_options = [
+        ResolvedPriceOption(price=opt.price, airline=opt.airline, departure_time=opt.departure_time)
+        for opt in outbound_options
+    ]
+    checked_at = timeutils.now_utc_iso()
+    _write_and_notify(route, checked_at, best_options, matched_preferred_window, target_date, None)
 
 
 def run(route_ids: list[str] | None = None) -> None:
