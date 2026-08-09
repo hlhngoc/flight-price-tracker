@@ -120,6 +120,17 @@ def set_route_status(route_id: str, status: str) -> None:
     db().collection(ROUTES).document(route_id).update({"status": status})
 
 
+def set_route_last_bundle_verified_at(route_id: str, checked_at: str) -> None:
+    """Same-carrier round-trip routes only — records when their bundled
+    fare was last confirmed against SerpApi's actual round-trip price, so
+    route_tracking.py's bundle-verification flow knows when a re-check is
+    due. Absent entirely on routes that have never gone through that flow
+    (one-way routes, or a round-trip route not yet checked) — callers must
+    read it with route.get(...), not route[...].
+    """
+    db().collection(ROUTES).document(route_id).update({"last_bundle_verified_at": checked_at})
+
+
 def backfill_route_return_date_field(page_size: int = 300) -> int:
     """One-time backfill for preferred_routes docs written before
     return_date existed. find_matching_route/add_route_if_new now do
@@ -253,7 +264,8 @@ def add_price_record(route_id: str, flight_date: str, departure_time: Optional[s
                       price: int, airline: Optional[str], checked_at: str,
                       matched_preferred_window: bool,
                       return_departure_time: Optional[str] = None,
-                      return_airline: Optional[str] = None) -> str:
+                      return_airline: Optional[str] = None,
+                      price_source: Optional[str] = None) -> str:
     """matched_preferred_window: True if this result's departure_time falls
     inside the route's preferred_time_window (or the route has none set —
     trivially satisfied); False if it's a fallback shown despite not
@@ -262,6 +274,12 @@ def add_price_record(route_id: str, flight_date: str, departure_time: Optional[s
     return_departure_time/return_airline: only set for round-trip routes —
     the resolved return leg's departure time/airline (see
     route_tracking.py's ResolvedPriceOption). None for one-way routes.
+
+    price_source: round-trip only — "combined" (independent fast-flights
+    outbound + return legs summed) or "bundle" (SerpApi's actual
+    round-trip fare, periodically re-verified for same-carrier trips). None
+    for one-way records, and for round-trip records written before this
+    field existed. See route_tracking.py's bundle-verification flow.
     """
     doc_ref = db().collection(PRICE_HISTORY).document()
     doc_ref.set({
@@ -274,6 +292,7 @@ def add_price_record(route_id: str, flight_date: str, departure_time: Optional[s
         "matched_preferred_window": matched_preferred_window,
         "return_departure_time": return_departure_time,
         "return_airline": return_airline,
+        "price_source": price_source,
     })
     return doc_ref.id
 
