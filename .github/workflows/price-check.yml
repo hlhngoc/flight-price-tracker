@@ -26,6 +26,7 @@ jobs:
 
       - name: Run route price check
         env:
+          FLIGHT_PROVIDER: ${{ vars.FLIGHT_PROVIDER }}
           SERPAPI_KEY: ${{ secrets.SERPAPI_KEY }}
           GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY }}
           GEMINI_MODEL: ${{ vars.GEMINI_MODEL }}
