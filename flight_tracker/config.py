@@ -41,6 +41,26 @@ def serpapi_key() -> str:
     return _require("SERPAPI_KEY")
 
 
+FLIGHT_PROVIDERS = ("fast_flights", "serpapi")
+
+
+def flight_provider() -> str:
+    """Which flight-price source route_tracking.py uses by default —
+    'fast_flights' (scrapes Google Flights directly, no paid quota) or
+    'serpapi' (original provider, ~250 free searches/month). See
+    flight_provider.py: fast_flights still falls back to serpapi per-search
+    on failure or for round-trip (not implemented there yet), regardless of
+    this setting.
+    """
+    # `or` (not `.get(name, default)`) because GitHub Actions injects an
+    # empty-string env var for an unset repo `vars.*` reference rather than
+    # omitting it — see .github/workflows/price-check.yml.
+    value = (os.environ.get("FLIGHT_PROVIDER") or "fast_flights").strip().lower()
+    if value not in FLIGHT_PROVIDERS:
+        raise MissingConfig(f"FLIGHT_PROVIDER must be one of {FLIGHT_PROVIDERS}, got: {value!r}")
+    return value
+
+
 def gemini_api_key() -> str:
     return _require("GEMINI_API_KEY")
 

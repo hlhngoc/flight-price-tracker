@@ -10,9 +10,10 @@ from dataclasses import dataclass
 from datetime import date, datetime, timedelta, timezone
 from typing import Optional
 
-from . import db, email_sender, pricing, serpapi_client, time_windows, timeutils
+from . import db, email_sender, flight_provider, pricing, serpapi_client, time_windows, timeutils
 
-# Google Flights (via SerpApi) sometimes returns a thinner result set — e.g.
+# Google Flights (via whichever provider is active — see flight_provider.py)
+# sometimes returns a thinner result set — e.g.
 # only 1 airline instead of several — on the very first query for a given
 # origin/destination/date, then a fuller one on an identical query moments
 # later. This is most visible right after a route is created and checked
@@ -90,15 +91,15 @@ def _search_and_select(route, target_date: date, return_date: Optional[date], pr
     get the final combined price + return leg. The retry logic here only
     ever re-runs this outbound call, never the return-leg resolution.
     """
-    options = serpapi_client.search_flights(route["origin"], route["destination"], target_date, return_date)
-    best_options, matched = serpapi_client.cheapest_distinct_airlines(options, preferred_window=preferred_window)
+    options = flight_provider.search_flights(route["origin"], route["destination"], target_date, return_date)
+    best_options, matched = flight_provider.cheapest_distinct_airlines(options, preferred_window=preferred_window)
 
     for attempt in range(1, RETRY_ATTEMPTS + 1):
         if len(best_options) >= RETRY_MIN_DISTINCT_AIRLINES:
             break
         time.sleep(RETRY_DELAY_SECONDS)
-        retry_raw = serpapi_client.search_flights(route["origin"], route["destination"], target_date, return_date)
-        retry_options, retry_matched = serpapi_client.cheapest_distinct_airlines(
+        retry_raw = flight_provider.search_flights(route["origin"], route["destination"], target_date, return_date)
+        retry_options, retry_matched = flight_provider.cheapest_distinct_airlines(
             retry_raw, preferred_window=preferred_window,
         )
         if len(retry_options) > len(best_options):

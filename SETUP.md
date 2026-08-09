@@ -39,7 +39,7 @@ In your repo: **Settings → Secrets and variables → Actions**, add these **se
 
 | Name | Value |
 |---|---|
-| `SERPAPI_KEY` | from step 4 |
+| `SERPAPI_KEY` | from step 4 — still needed as the fallback provider, see below |
 | `GEMINI_API_KEY` | from step 4 |
 | `SMTP_HOST` | e.g. `smtp.gmail.com` |
 | `SMTP_PORT` | e.g. `587` |
@@ -50,6 +50,8 @@ In your repo: **Settings → Secrets and variables → Actions**, add these **se
 | `FIREBASE_SERVICE_ACCOUNT_JSON` | paste the **entire JSON file** from step 2 |
 
 Optionally add a repo **variable** `GEMINI_MODEL` if you want something other than the default `gemini-3.6-flash`.
+
+Optionally add a repo **variable** `FLIGHT_PROVIDER` set to `serpapi` to force the original provider — default is `fast_flights` (scrapes Google Flights directly, no paid quota), which falls back to SerpApi automatically per-search on failure or for round-trip routes (not implemented for fast_flights yet — see `flight_tracker/flight_provider.py`).
 
 The workflow (`.github/workflows/price-check.yml`) is already scheduled for 08:00 and 19:00 Asia/Ho_Chi_Minh. You can also trigger it manually from the Actions tab (`workflow_dispatch`), optionally scoped to specific route IDs.
 
