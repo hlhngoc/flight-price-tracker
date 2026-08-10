@@ -13,3 +13,5 @@ web/.next/
 web/.env.local
 web/next-env.d.ts
 web/firestore-debug.log
+.DS_Store
+web/.DS_Store
