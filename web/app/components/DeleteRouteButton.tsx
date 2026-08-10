@@ -6,9 +6,14 @@ import { useState } from "react";
 export default function DeleteRouteButton({
   routeId,
   eventName,
+  variant = "link",
 }: {
   routeId: string;
   eventName?: string | null;
+  // "icon": ghost trash-icon button, for the Detail Panel action bar
+  // (paired with the ✏️ Edit icon button). "link": text link, for the
+  // Master List kebab dropdown (paired with the "Sửa" text menu item).
+  variant?: "link" | "icon";
 }) {
   const router = useRouter();
   const [pending, setPending] = useState(false);
@@ -46,8 +51,15 @@ export default function DeleteRouteButton({
 
   return (
     <>
-      <button className="button-link button-link-danger" type="button" disabled={pending} onClick={handleClick}>
-        {pending ? "..." : "Xoá"}
+      <button
+        className={variant === "icon" ? "icon-button" : "button-link button-link-danger"}
+        type="button"
+        disabled={pending}
+        onClick={handleClick}
+        title={variant === "icon" ? "Xoá" : undefined}
+        aria-label={variant === "icon" ? "Xoá" : undefined}
+      >
+        {pending ? "..." : variant === "icon" ? "🗑️" : "Xoá"}
       </button>
       {confirming && (
         <div className="modal-overlay" onClick={() => !pending && setConfirming(false)}>
