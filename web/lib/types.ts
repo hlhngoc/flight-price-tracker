@@ -44,6 +44,11 @@ export interface RouteDoc {
   ai_reasoning: string | null;
   status: RouteStatus;
   created_at: string;
+  // Same-carrier round-trip routes only — when their bundled fare was last
+  // confirmed against SerpApi's actual round-trip price (see
+  // flight_tracker/route_tracking.py's BUNDLE_VERIFY_INTERVAL_DAYS). Absent
+  // on one-way routes and on round-trip routes never yet checked.
+  last_bundle_verified_at?: string | null;
 }
 
 export interface PriceRecord {
@@ -63,6 +68,13 @@ export interface PriceRecord {
   // records written before round-trip support existed.
   return_departure_time?: string | null;
   return_airline?: string | null;
+  // Round-trip only — "combined" (independent fast-flights outbound+return
+  // legs summed, zero SerpApi cost) or "bundle" (SerpApi's actual
+  // round-trip fare, periodically re-verified for same-carrier trips only).
+  // Undefined for one-way records and for round-trip records written before
+  // this field existed — see flight_tracker/route_tracking.py's
+  // bundle-verification flow.
+  price_source?: "combined" | "bundle" | null;
 }
 
 export interface EventSlot {

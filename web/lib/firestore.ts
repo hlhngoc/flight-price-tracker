@@ -249,3 +249,35 @@ export async function getLatestPricesForRoute(routeId: string): Promise<PriceRec
   const latestCheckedAt = docs[0].checked_at;
   return docs.filter((d) => d.checked_at === latestCheckedAt).sort((a, b) => a.price - b.price);
 }
+
+// Trend arrow for the Master List / Detail Panel: cheapest price from the
+// latest check vs the cheapest price from the check immediately before it.
+// A single check can write up to 2-3 rows sharing one checked_at (one-way:
+// up to 2 distinct-airline rows; round-trip: 1 combined/bundle row), so this
+// pulls a few extra rows and groups by checked_at rather than assuming a
+// fixed row count.
+export async function getPriceTrendForRoute(
+  routeId: string
+): Promise<{ current: number | null; previous: number | null; trend: "up" | "down" | null }> {
+  const snap = await firestoreDb()
+    .collection(PRICE_HISTORY)
+    .where("route_id", "==", routeId)
+    .orderBy("checked_at", "desc")
+    .limit(6)
+    .get();
+  if (snap.empty) return { current: null, previous: null, trend: null };
+
+  const docs = snap.docs.map((d) => d.data() as Omit<PriceRecord, "id">);
+  const cheapestByCheckedAt = new Map<string, number>();
+  for (const d of docs) {
+    const existing = cheapestByCheckedAt.get(d.checked_at);
+    if (existing === undefined || d.price < existing) cheapestByCheckedAt.set(d.checked_at, d.price);
+  }
+  const [currentAt, previousAt] = [...cheapestByCheckedAt.keys()].sort().reverse();
+  const current = currentAt !== undefined ? cheapestByCheckedAt.get(currentAt)! : null;
+  const previous = previousAt !== undefined ? cheapestByCheckedAt.get(previousAt)! : null;
+  if (current === null || previous === null || current === previous) {
+    return { current, previous, trend: null };
+  }
+  return { current, previous, trend: current < previous ? "down" : "up" };
+}

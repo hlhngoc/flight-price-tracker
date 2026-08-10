@@ -17,9 +17,11 @@ interface PatchResult {
 export default function EditEventForm({
   event,
   datetimeLocalValue,
+  onSuccess,
 }: {
   event: EventDoc;
   datetimeLocalValue: string;
+  onSuccess?: () => void;
 }) {
   const [name, setName] = useState(event.event_name);
   const [datetime, setDatetime] = useState(datetimeLocalValue);
@@ -56,7 +58,11 @@ export default function EditEventForm({
         setError(data.error ?? "Có lỗi xảy ra.");
         return;
       }
-      setResult(data);
+      if (onSuccess) {
+        onSuccess();
+      } else {
+        setResult(data);
+      }
     } finally {
       setSubmitting(false);
     }

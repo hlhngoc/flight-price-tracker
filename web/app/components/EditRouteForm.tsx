@@ -7,7 +7,7 @@ import { formatDmy } from "@/lib/dateFormat";
 import { TIME_WINDOW_PRESETS } from "@/lib/timeWindows";
 import type { RouteDoc } from "@/lib/types";
 
-export default function EditRouteForm({ route }: { route: RouteDoc }) {
+export default function EditRouteForm({ route, onSuccess }: { route: RouteDoc; onSuccess?: () => void }) {
   const router = useRouter();
   // Event-linked routes are AI-picked candidate slots — origin/destination/
   // date/time-window are only editable via the event edit flow, so this
@@ -64,8 +64,12 @@ export default function EditRouteForm({ route }: { route: RouteDoc }) {
         setError(data.error ?? "Có lỗi xảy ra.");
         return;
       }
-      router.push("/");
-      router.refresh();
+      if (onSuccess) {
+        onSuccess();
+      } else {
+        router.push("/");
+        router.refresh();
+      }
     } finally {
       setSubmitting(false);
     }
