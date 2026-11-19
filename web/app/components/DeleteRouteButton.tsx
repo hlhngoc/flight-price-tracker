@@ -1,7 +1,9 @@
 "use client";
 
 import { useRouter } from "next/navigation";
-import { useState } from "react";
+import { startTransition, useState } from "react";
+import { useDashboard } from "./Dashboard";
+import { useToast } from "./ToastProvider";
 
 export default function DeleteRouteButton({
   routeId,
@@ -19,23 +21,29 @@ export default function DeleteRouteButton({
   const [pending, setPending] = useState(false);
   const [confirming, setConfirming] = useState(false);
   const [scope, setScope] = useState<"single" | "event">("single");
+  const dashboard = useDashboard();
+  const { showToast } = useToast();
 
+  // Optimistic: the row disappears right away; the DELETE + refresh run in
+  // the background and the row comes back only if the request fails.
   async function runDelete(deleteScope?: "single" | "event") {
-    setPending(true);
+    setConfirming(false);
+    dashboard?.hide([routeId]);
+    if (!dashboard) setPending(true);
     try {
       const resp = await fetch(`/api/routes/${routeId}`, {
         method: "DELETE",
         headers: deleteScope ? { "Content-Type": "application/json" } : undefined,
         body: deleteScope ? JSON.stringify({ scope: deleteScope }) : undefined,
       });
-      if (resp.ok) {
-        router.refresh();
-      } else {
-        alert("Không xoá được route.");
-      }
+      if (!resp.ok) throw new Error(String(resp.status));
+      showToast("Đã xoá route");
+      startTransition(() => router.refresh());
+    } catch {
+      dashboard?.unhide([routeId]);
+      showToast("Không xoá được route.", "error");
     } finally {
       setPending(false);
-      setConfirming(false);
     }
   }
 

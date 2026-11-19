@@ -281,3 +281,40 @@ export async function getPriceTrendForRoute(
   }
   return { current, previous, trend: current < previous ? "down" : "up" };
 }
+
+// Dashboard fast path: one price_history query per route instead of two
+// (getLatestPricesForRoute + getPriceTrendForRoute ran the same
+// route_id/checked_at-desc query twice, limit 2 and limit 6). Same index,
+// same semantics: latest = up to 2 cheapest rows sharing the newest
+// checked_at; trend = cheapest of newest check vs cheapest of the one before.
+export async function getPriceSummaryForRoute(routeId: string): Promise<{
+  prices: PriceRecord[];
+  trend: { current: number | null; previous: number | null; trend: "up" | "down" | null };
+}> {
+  const snap = await firestoreDb()
+    .collection(PRICE_HISTORY)
+    .where("route_id", "==", routeId)
+    .orderBy("checked_at", "desc")
+    .limit(6)
+    .get();
+  if (snap.empty) return { prices: [], trend: { current: null, previous: null, trend: null } };
+
+  const docs = snap.docs.map((d) => ({ id: d.id, ...(d.data() as Omit<PriceRecord, "id">) }));
+  const latestCheckedAt = docs[0].checked_at;
+  const prices = docs
+    .filter((d) => d.checked_at === latestCheckedAt)
+    .sort((a, b) => a.price - b.price)
+    .slice(0, 2);
+
+  const cheapestByCheckedAt = new Map<string, number>();
+  for (const d of docs) {
+    const existing = cheapestByCheckedAt.get(d.checked_at);
+    if (existing === undefined || d.price < existing) cheapestByCheckedAt.set(d.checked_at, d.price);
+  }
+  const [currentAt, previousAt] = [...cheapestByCheckedAt.keys()].sort().reverse();
+  const current = currentAt !== undefined ? cheapestByCheckedAt.get(currentAt)! : null;
+  const previous = previousAt !== undefined ? cheapestByCheckedAt.get(previousAt)! : null;
+  const trend =
+    current === null || previous === null || current === previous ? null : current < previous ? "down" : "up";
+  return { prices, trend: { current, previous, trend } };
+}

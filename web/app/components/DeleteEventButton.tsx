@@ -1,7 +1,9 @@
 "use client";
 
 import { useRouter } from "next/navigation";
-import { useState } from "react";
+import { startTransition, useState } from "react";
+import { useDashboard } from "./Dashboard";
+import { useToast } from "./ToastProvider";
 
 export default function DeleteEventButton({
   eventId,
@@ -13,17 +15,22 @@ export default function DeleteEventButton({
 }) {
   const router = useRouter();
   const [pending, setPending] = useState(false);
+  const dashboard = useDashboard();
+  const { showToast } = useToast();
 
+  // Optimistic — see DeleteRouteButton.runDelete.
   async function deleteEvent() {
     if (!confirm("Xoá event này? Sẽ không còn tự động thử lại AI cho event này nữa.")) return;
-    setPending(true);
+    dashboard?.hide([eventId]);
+    if (!dashboard) setPending(true);
     try {
       const resp = await fetch(`/api/events/${eventId}`, { method: "DELETE" });
-      if (resp.ok) {
-        router.refresh();
-      } else {
-        alert("Không xoá được event.");
-      }
+      if (!resp.ok) throw new Error(String(resp.status));
+      showToast("Đã xoá sự kiện");
+      startTransition(() => router.refresh());
+    } catch {
+      dashboard?.unhide([eventId]);
+      showToast("Không xoá được event.", "error");
     } finally {
       setPending(false);
     }

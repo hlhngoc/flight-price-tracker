@@ -1,12 +1,12 @@
 "use client";
 
 import { useEffect, useRef, useState } from "react";
-import Link from "next/link";
 import { formatTime } from "@/lib/dateFormat";
 import { formatPrice, type MasterListRow } from "@/lib/dashboardView";
 import AddEditModal from "./AddEditModal";
 import DeleteEventButton from "./DeleteEventButton";
 import DeleteRouteButton from "./DeleteRouteButton";
+import { useDashboard } from "./Dashboard";
 
 const AI_STATUS_LABEL: Record<string, string> = {
   pending: "Đang lựa chọn tuyến",
@@ -27,21 +27,37 @@ export default function MasterListItem({ row, isSelected }: { row: MasterListRow
   const [menuOpen, setMenuOpen] = useState(false);
   const [editing, setEditing] = useState(false);
   const wrapRef = useRef<HTMLDivElement>(null);
+  const dashboard = useDashboard();
 
+  // pointerdown, not click: iOS Safari doesn't dispatch click to document
+  // for taps on non-interactive elements, so the menu never closed on iPad.
   useEffect(() => {
     if (!menuOpen) return;
-    function onClickOutside(e: MouseEvent) {
+    function onPointerOutside(e: PointerEvent) {
       if (wrapRef.current && !wrapRef.current.contains(e.target as Node)) setMenuOpen(false);
     }
-    document.addEventListener("click", onClickOutside);
-    return () => document.removeEventListener("click", onClickOutside);
+    document.addEventListener("pointerdown", onPointerOutside);
+    return () => document.removeEventListener("pointerdown", onPointerOutside);
   }, [menuOpen]);
 
   const statusLabel = row.kind === "event" && row.aiStatus !== "done" ? AI_STATUS_LABEL[row.aiStatus] : null;
 
   return (
     <div className="master-item-row" ref={wrapRef}>
-      <Link href={`/?sel=${row.id}`} scroll={false} className="master-item" data-active={isSelected}>
+      {/* Plain <a> + history.pushState (via Dashboard): selection is instant
+          and client-only — no server round-trip. Modifier-clicks fall
+          through to the real href (open in new tab). */}
+      <a
+        href={`/?sel=${row.id}`}
+        className="master-item"
+        data-active={isSelected}
+        onClick={(e) => {
+          if (!dashboard || e.metaKey || e.ctrlKey || e.shiftKey || e.altKey || e.button !== 0) return;
+          e.preventDefault();
+          setMenuOpen(false);
+          dashboard.select(row.id);
+        }}
+      >
         <span className="ticket-badge">{row.ticketType === "round-trip" ? "Khứ hồi" : "Một chiều"}</span>
         <span className="master-item-codes">
           {row.originCode} → {row.destinationCode}
@@ -56,7 +72,7 @@ export default function MasterListItem({ row, isSelected }: { row: MasterListRow
           <span className="best-price muted">-</span>
         )}
         <TrendIcon trend={row.trend} />
-      </Link>
+      </a>
 
       <button
         type="button"

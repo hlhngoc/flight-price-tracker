@@ -82,9 +82,31 @@ button {
   text-decoration: none;
 }
 
-.button:hover,
-button:hover {
-  opacity: 0.9;
+/* Hover only for real mouse/trackpad — on touch, :hover sticks after a tap
+   and iOS can swallow the first tap as a "hover" when it changes styles. */
+@media (hover: hover) and (pointer: fine) {
+  .button:hover,
+  button:hover {
+    opacity: 0.9;
+  }
+}
+
+/* Remove the ~300ms double-tap-zoom delay and the grey tap flash; give
+   tactile feedback with :active instead. */
+a,
+button,
+input,
+label,
+select,
+textarea,
+.master-item {
+  touch-action: manipulation;
+  -webkit-tap-highlight-color: transparent;
+}
+
+.button:active,
+button:active {
+  opacity: 0.75;
 }
 
 .button-secondary {
@@ -298,6 +320,9 @@ select {
   margin: 0;
   padding: 0;
   height: 100vh;
+  /* iOS Safari: 100vh ignores the collapsing toolbar, cutting off the
+     bottom of the list; dvh tracks the real visible height. */
+  height: 100dvh;
   display: flex;
   flex-direction: column;
 }
@@ -360,7 +385,24 @@ select {
   .app-shell[data-has-selection="true"] .detail-panel-wrap {
     display: block;
     width: 100%;
+    padding: 16px;
   }
+  .detail-panel-wrap .mobile-back {
+    display: inline-flex;
+    background: transparent;
+    color: var(--accent);
+    border: none;
+    padding: 8px 0;
+    margin-bottom: 8px;
+    font-size: 15px;
+  }
+}
+
+/* Momentum scrolling + no scroll chaining to the page on iOS. */
+.master-panel,
+.detail-panel-wrap {
+  -webkit-overflow-scrolling: touch;
+  overscroll-behavior: contain;
 }
 
 /* Master list */
@@ -387,22 +429,36 @@ select {
   color: var(--fg);
 }
 
+/* Visible by default (touch: phone + iPad). Only hidden-until-hover on
+   devices with a real hover pointer — previously iPad (>=768px, no hover)
+   got opacity:0 + a :hover reveal, so iOS sometimes ate the first tap on a
+   row as a hover, and the invisible button still caught taps near the
+   row's bottom-right corner. */
 .kebab-trigger {
   position: absolute;
-  bottom: 10px;
-  right: 12px;
-  opacity: 0;
+  bottom: 4px;
+  right: 6px;
+  opacity: 1;
   background: transparent;
   color: var(--muted);
   border: none;
-  padding: 2px 6px;
-  font-size: 16px;
+  padding: 8px 12px;
+  min-width: 36px;
+  min-height: 36px;
+  justify-content: center;
+  font-size: 18px;
   line-height: 1;
 }
 
-.master-item-row:hover .kebab-trigger,
-.kebab-trigger[data-open="true"] {
-  opacity: 1;
+@media (hover: hover) and (pointer: fine) {
+  .kebab-trigger {
+    opacity: 0;
+  }
+  .master-item-row:hover .kebab-trigger,
+  .kebab-trigger:focus-visible,
+  .kebab-trigger[data-open="true"] {
+    opacity: 1;
+  }
 }
 
 .kebab-dropdown {
@@ -433,14 +489,29 @@ select {
   cursor: pointer;
 }
 
-.kebab-dropdown-item:hover {
+@media (hover: hover) and (pointer: fine) {
+  .kebab-dropdown-item:hover {
+    background: var(--card);
+  }
+}
+
+.kebab-dropdown-item:active {
   background: var(--card);
 }
 
-@media (max-width: 767px) {
-  .kebab-trigger {
-    opacity: 1;
+@media (hover: none), (pointer: coarse) {
+  .kebab-dropdown-item {
+    padding: 12px 14px;
+    font-size: 15px;
   }
+}
+
+.master-item:active {
+  background: var(--card);
+}
+
+.mobile-back {
+  display: none;
 }
 
 .master-item[data-active="true"] {

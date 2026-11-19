@@ -1,25 +1,21 @@
 import Link from "next/link";
-import { getLatestPricesForRoute, getPriceTrendForRoute, listEvents, listRoutes } from "@/lib/firestore";
+import { getPriceSummaryForRoute, listEvents, listRoutes } from "@/lib/firestore";
 import { buildEventRow, buildManualRow, effectiveSortDate, type RouteInfo, type SelectedDetail } from "@/lib/dashboardView";
 import type { RouteDoc } from "@/lib/types";
-import AppShell from "./components/AppShell";
-import MasterList, { type MasterListSection } from "./components/MasterList";
-import DetailPanel from "./components/DetailPanel";
+import type { MasterListSection } from "./components/MasterList";
+import Dashboard from "./components/Dashboard";
 
 export const dynamic = "force-dynamic";
 
-export default async function DashboardPage({
-  searchParams,
-}: {
-  searchParams: Promise<{ sel?: string }>;
-}) {
-  const { sel } = await searchParams;
+// Selection (?sel=) is resolved client-side in <Dashboard> — every row's
+// detail is precomputed here, so tapping a row is a local state change via
+// history.pushState instead of a full server re-render + Firestore fan-out.
+export default async function DashboardPage() {
   const [routes, events] = await Promise.all([listRoutes(), listEvents()]);
-  const eventsById = new Map(events.map((e) => [e.id, e]));
 
   const routeInfoEntries = await Promise.all(
     routes.map(async (r) => {
-      const [prices, trend] = await Promise.all([getLatestPricesForRoute(r.id), getPriceTrendForRoute(r.id)]);
+      const { prices, trend } = await getPriceSummaryForRoute(r.id);
       return [r.id, { route: r, prices, trend }] as const;
     })
   );
@@ -53,21 +49,15 @@ export default async function DashboardPage({
   };
 
   const sections = [manualSection, eventSection];
-  const allRows = [...manualSection.rows, ...eventSection.rows];
-  const selectedId = sel ?? allRows[0]?.id ?? null;
 
-  let detail: SelectedDetail = null;
-  if (selectedId) {
-    const selectedEvent = eventsById.get(selectedId);
-    if (selectedEvent) {
-      const routeInfos = (routesByEvent.get(selectedId) ?? []).map((r) => routeInfoById.get(r.id)!);
-      detail = { kind: "event", event: selectedEvent, routeInfos };
-    } else {
-      const routeInfo = routeInfoById.get(selectedId);
-      if (routeInfo && !routeInfo.route.event_id) {
-        detail = { kind: "manual", routeInfo };
-      }
-    }
+  const details: Record<string, SelectedDetail> = {};
+  for (const r of manualRoutes) details[r.id] = { kind: "manual", routeInfo: routeInfoById.get(r.id)! };
+  for (const e of events) {
+    details[e.id] = {
+      kind: "event",
+      event: e,
+      routeInfos: (routesByEvent.get(e.id) ?? []).map((r) => routeInfoById.get(r.id)!),
+    };
   }
 
   return (
@@ -88,11 +78,7 @@ export default async function DashboardPage({
           </form>
         </div>
       </div>
-      <AppShell
-        hasSelection={selectedId !== null}
-        masterPanel={<MasterList sections={sections} selectedId={selectedId} />}
-        detailPanel={<DetailPanel detail={detail} />}
-      />
+      <Dashboard sections={sections} details={details} />
     </main>
   );
 }
