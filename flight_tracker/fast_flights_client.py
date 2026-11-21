@@ -28,6 +28,7 @@ from typing import Optional
 
 from fast_flights import FlightQuery, FlightsNotFound, create_filter, get_flights
 
+from . import config
 from .serpapi_client import FlightOption  # same shape callers already rely on
 
 
@@ -60,6 +61,10 @@ def _parse_flights(results) -> list[FlightOption]:
     for entry in results:
         legs = entry.flights
         if not legs:
+            continue
+        # Any excluded carrier on the itinerary (incl. codeshare/connections)
+        # drops the whole option — see config.excluded_airlines.
+        if any(config.is_excluded_airline(a) for a in (entry.airlines or [])):
             continue
         first_leg, last_leg = legs[0], legs[-1]
         durations = [leg.duration for leg in legs if leg.duration is not None]

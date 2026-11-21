@@ -38,6 +38,11 @@ def _parse_flights(payload: dict) -> list[FlightOption]:
             legs = entry.get("flights") or []
             if not legs or "price" not in entry:
                 continue
+            # Any excluded carrier on any leg drops the whole option — see
+            # config.excluded_airlines. Applies to return legs too, since
+            # fetch_return_leg parses through here.
+            if any(config.is_excluded_airline(leg.get("airline")) for leg in legs):
+                continue
             first_leg, last_leg = legs[0], legs[-1]
             options.append(
                 FlightOption(

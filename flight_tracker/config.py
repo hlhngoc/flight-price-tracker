@@ -61,6 +61,31 @@ def flight_provider() -> str:
     return value
 
 
+def _normalize_airline(name: str) -> str:
+    return "".join(ch for ch in name.lower() if ch.isalnum())
+
+
+def excluded_airlines() -> list[str]:
+    """Airlines never tracked — their fares are dropped right at parse time
+    (fast_flights_client / serpapi_client), so they can't become the
+    "cheapest" option, a price_history row, or an email alert. Matching is
+    a case/space/punctuation-insensitive substring check, so "vietjet"
+    also catches "VietJet Air" and "Vietjet Thailand". Override with
+    EXCLUDED_AIRLINES="a,b" (comma-separated); set it to "none" to disable.
+    """
+    raw = (os.environ.get("EXCLUDED_AIRLINES") or "vietjet").strip()
+    if raw.lower() == "none":
+        return []
+    return [n for n in (_normalize_airline(x) for x in raw.split(",")) if n]
+
+
+def is_excluded_airline(name: str | None) -> bool:
+    if not name:
+        return False
+    norm = _normalize_airline(name)
+    return any(ex in norm for ex in excluded_airlines())
+
+
 def gemini_api_key() -> str:
     return _require("GEMINI_API_KEY")
 
