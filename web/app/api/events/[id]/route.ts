@@ -2,7 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { resolveAirportCode } from "@/lib/airports";
 import { claimEventForPlanning, deleteEventAndRoutes, deleteRoutesForEvent, getEvent, updateEvent } from "@/lib/firestore";
 import { planEventRoutes } from "@/lib/eventPlanning";
-import { TIME_WINDOW_PRESETS } from "@/lib/timeWindows";
+import { isValidTimeWindow } from "@/lib/timeWindows";
 
 export const runtime = "nodejs";
 
@@ -29,7 +29,7 @@ export async function PATCH(req: NextRequest, { params }: { params: Promise<{ id
   } catch {
     return NextResponse.json({ error: "Invalid JSON body" }, { status: 400 });
   }
-  if (body.timeWindow && !TIME_WINDOW_PRESETS.includes(body.timeWindow)) {
+  if (body.timeWindow && !isValidTimeWindow(body.timeWindow)) {
     return NextResponse.json({ error: "Khung giờ mong muốn không hợp lệ." }, { status: 400 });
   }
 

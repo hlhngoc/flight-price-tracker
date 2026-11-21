@@ -23,3 +23,27 @@ export function parseTimeWindow(label: string | null | undefined): [number, numb
   if (!(startH >= 0 && startH <= 24 && endH >= 0 && endH <= 24)) return null;
   return [startH, endH];
 }
+
+export const CUSTOM_WINDOW_PREFIX = "Tuỳ chỉnh";
+
+// Narrower ranges often contain no flight at all on domestic routes, so the
+// UI and API enforce at least this span. (If a range still comes back empty,
+// the cron falls back to the flights departing nearest to it.)
+export const MIN_WINDOW_HOURS = 3;
+
+// Custom ranges are stored in the same "<label> (HH:MM-HH:MM)" shape as the
+// presets, so the Python cron's parse_time_window/is_within_window filter
+// them with no changes. Hour granularity only (the cron compares by hour).
+export function formatCustomWindow(startHour: number, endHour: number): string {
+  const hh = (h: number) => `${String(h).padStart(2, "0")}:00`;
+  return `${CUSTOM_WINDOW_PREFIX} (${hh(startHour)}-${hh(endHour)})`;
+}
+
+// Accepts any preset or any parseable label spanning >= MIN_WINDOW_HOURS
+// (no past-midnight wrap, to keep "same day" semantics simple for the UI).
+export function isValidTimeWindow(label: string | null | undefined): boolean {
+  if (!label) return false;
+  if (TIME_WINDOW_PRESETS.includes(label)) return true;
+  const parsed = parseTimeWindow(label);
+  return parsed !== null && parsed[1] - parsed[0] >= MIN_WINDOW_HOURS;
+}

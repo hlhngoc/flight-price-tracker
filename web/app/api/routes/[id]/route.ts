@@ -8,7 +8,7 @@ import {
   setRouteStatus,
   updateRoute,
 } from "@/lib/firestore";
-import { TIME_WINDOW_PRESETS } from "@/lib/timeWindows";
+import { isValidTimeWindow } from "@/lib/timeWindows";
 import type { RouteStatus } from "@/lib/types";
 
 export const runtime = "nodejs";
@@ -61,7 +61,7 @@ export async function PATCH(req: NextRequest, { params }: { params: Promise<{ id
     return NextResponse.json({ ok: true });
   }
 
-  if (body.preferred_time_window && !TIME_WINDOW_PRESETS.includes(body.preferred_time_window)) {
+  if (body.preferred_time_window && !isValidTimeWindow(body.preferred_time_window)) {
     return NextResponse.json({ error: "Khung giờ mong muốn không hợp lệ." }, { status: 400 });
   }
 

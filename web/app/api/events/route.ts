@@ -2,7 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { resolveAirportCode } from "@/lib/airports";
 import { addEvent, claimEventForPlanning, getEvent } from "@/lib/firestore";
 import { planEventRoutes } from "@/lib/eventPlanning";
-import { TIME_WINDOW_PRESETS } from "@/lib/timeWindows";
+import { isValidTimeWindow } from "@/lib/timeWindows";
 
 export const runtime = "nodejs";
 
@@ -28,7 +28,7 @@ export async function POST(req: NextRequest) {
   if (!name || !datetime || !location || !origin || flexibilityDays == null) {
     return NextResponse.json({ error: "Thiếu trường bắt buộc." }, { status: 400 });
   }
-  if (body.timeWindow && !TIME_WINDOW_PRESETS.includes(body.timeWindow)) {
+  if (body.timeWindow && !isValidTimeWindow(body.timeWindow)) {
     return NextResponse.json({ error: "Khung giờ mong muốn không hợp lệ." }, { status: 400 });
   }
 

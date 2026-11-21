@@ -15,8 +15,13 @@ export const MAX_SLOTS_PER_EVENT = 5;
 // is even in range. Mirrors flight_tracker/ai_reasoning.py's BUFFER_HOURS.
 const BUFFER_HOURS = 4;
 
-function systemPrompt(maxSlots: number): string {
-  const windowPresets = TIME_WINDOW_PRESETS.map((w) => `- ${w}`).join("\n");
+function systemPrompt(maxSlots: number, extraWindow?: string | null): string {
+  // A custom (non-preset) event window is offered as one more allowed value,
+  // so the AI can pick exactly the range the user asked for.
+  const allowed = extraWindow && !TIME_WINDOW_PRESETS.includes(extraWindow)
+    ? [...TIME_WINDOW_PRESETS, extraWindow]
+    : TIME_WINDOW_PRESETS;
+  const windowPresets = allowed.map((w) => `- ${w}`).join("\n");
   return `Bạn là trợ lý chọn lịch bay cho một sự kiện. Dựa trên thông tin
 sự kiện, hãy chọn ra tối đa ${maxSlots} slot bay ứng viên hợp lý (ngày bay + khung
 giờ), có tính đến buffer thời gian an toàn trước sự kiện (tránh bay sát giờ, rủi ro
@@ -109,7 +114,7 @@ sau hoặc quá sát giờ sự kiện.`;
     method: "POST",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify({
-      systemInstruction: { parts: [{ text: systemPrompt(MAX_SLOTS_PER_EVENT) }] },
+      systemInstruction: { parts: [{ text: systemPrompt(MAX_SLOTS_PER_EVENT, event.preferred_time_window) }] },
       contents: [{ role: "user", parts: [{ text: userPrompt }] }],
       generationConfig: {
         temperature: 0.3,

@@ -2,7 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { resolveAirportCode } from "@/lib/airports";
 import { createRoutesAroundDate, DEFAULT_RANGE_DAYS } from "@/lib/dateRange";
 import { addRoute, listRoutes } from "@/lib/firestore";
-import { TIME_WINDOW_PRESETS } from "@/lib/timeWindows";
+import { isValidTimeWindow } from "@/lib/timeWindows";
 
 export const runtime = "nodejs";
 
@@ -18,7 +18,7 @@ interface RouteRequestBody {
   rangeBefore?: number;
   rangeAfter?: number;
   offsetDays?: number; // legacy: single rolling today+N days route
-  timeWindow?: string; // optional, must be one of TIME_WINDOW_PRESETS
+  timeWindow?: string; // optional, a preset or a custom "(HH:MM-HH:MM)" range
   returnDate?: string; // "YYYY-MM-DD", round-trip — only valid alongside targetDate
 }
 
@@ -43,7 +43,7 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({ error: (err as Error).message }, { status: 400 });
   }
 
-  if (body.timeWindow && !TIME_WINDOW_PRESETS.includes(body.timeWindow)) {
+  if (body.timeWindow && !isValidTimeWindow(body.timeWindow)) {
     return NextResponse.json({ error: "Khung giờ mong muốn không hợp lệ." }, { status: 400 });
   }
   const timeWindow = body.timeWindow || null;

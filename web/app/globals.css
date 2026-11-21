@@ -841,3 +841,30 @@ select {
   background: var(--danger);
   color: #ffffff;
 }
+
+/* Preferred time window picker (preset dropdown + custom Từ/Đến range) */
+.time-window-picker {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  margin-top: 4px;
+}
+
+.time-window-custom {
+  display: flex;
+  gap: 12px;
+}
+
+.time-window-field {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  font-size: 13px;
+  color: var(--muted);
+}
+
+.time-window-hint {
+  margin: 0;
+  font-size: 12px;
+}

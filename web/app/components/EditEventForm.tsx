@@ -2,8 +2,8 @@
 
 import Link from "next/link";
 import { useState, type FormEvent } from "react";
-import { TIME_WINDOW_PRESETS } from "@/lib/timeWindows";
 import type { EventDoc } from "@/lib/types";
+import TimeWindowPicker from "./TimeWindowPicker";
 
 interface PatchResult {
   eventId: string;
@@ -127,14 +127,7 @@ export default function EditEventForm({
       </label>
       <label>
         Khung giờ bay ưa thích (tùy chọn — AI ưu tiên chọn trong khung này nếu vẫn đủ buffer)
-        <select value={timeWindow} onChange={(e) => setTimeWindow(e.target.value)}>
-          <option value="">Không có</option>
-          {TIME_WINDOW_PRESETS.map((w) => (
-            <option key={w} value={w}>
-              {w}
-            </option>
-          ))}
-        </select>
+        <TimeWindowPicker value={timeWindow} onChange={setTimeWindow} emptyLabel="Không có" />
       </label>
       <label>
         Mã sân bay đến

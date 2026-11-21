@@ -52,3 +52,21 @@ def is_within_window(departure_time: str | None, window: tuple[int, int]) -> boo
     if start_h <= end_h:
         return start_h <= hour < end_h
     return hour >= start_h or hour < end_h  # wraps past midnight; unused by the presets above, but safe
+
+
+def minutes_outside_window(departure_time: str | None, window: tuple[int, int]) -> int | None:
+    """How far (in minutes) a departure is from the nearest edge of window;
+    0 if inside. None if departure_time is unparseable. Same-day only —
+    matches the UI, which only creates non-wrapping ranges.
+    """
+    try:
+        dt = datetime.strptime(departure_time or "", "%Y-%m-%d %H:%M")
+    except ValueError:
+        return None
+    minute_of_day = dt.hour * 60 + dt.minute
+    start, end = window[0] * 60, window[1] * 60
+    if start <= minute_of_day < end:
+        return 0
+    if minute_of_day < start:
+        return start - minute_of_day
+    return minute_of_day - end + 1

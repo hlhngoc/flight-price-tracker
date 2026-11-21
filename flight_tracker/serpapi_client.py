@@ -145,6 +145,12 @@ def _pick_distinct_airlines(options: list[FlightOption], max_results: int) -> li
     return picked
 
 
+# When nothing departs inside the preferred window, flights up to this many
+# minutes further out than the very closest one still count as "nearest" —
+# so a 90k-cheaper flight 30 min later isn't ignored for being 2nd-closest.
+NEAREST_SLACK_MINUTES = 60
+
+
 def cheapest_distinct_airlines(
     options: list[FlightOption],
     preferred_window: Optional[tuple[int, int]] = None,
@@ -162,9 +168,11 @@ def cheapest_distinct_airlines(
     first filtered to those departing inside it, and the selection above
     runs on that filtered set instead — matched_preferred_window is True.
     If nothing departs inside the window at this check, falls back to the
-    full unfiltered list and matched_preferred_window is False, so callers
-    can flag that this result doesn't reflect the route's actual
-    preference. With no preferred_window, behaves exactly as before and
+    flights departing NEAREST to the window (those within NEAREST_SLACK_
+    MINUTES of the closest one), cheapest first, and matched_preferred_
+    window is False, so callers can flag that this result is outside the
+    route's actual preference. (Previously it fell back to the cheapest
+    flight at any hour, which could be a 6am flight for an evening window.) With no preferred_window, behaves exactly as before and
     matched_preferred_window is always True.
     """
     if preferred_window is None:
@@ -174,4 +182,10 @@ def cheapest_distinct_airlines(
     if in_window:
         return _pick_distinct_airlines(in_window, max_results), True
 
-    return _pick_distinct_airlines(options, max_results), False
+    distances = [(time_windows.minutes_outside_window(o.departure_time, preferred_window), o) for o in options]
+    known = [(d, o) for d, o in distances if d is not None]
+    if not known:
+        return _pick_distinct_airlines(options, max_results), False
+    nearest = min(d for d, _ in known)
+    near_window = [o for d, o in known if d <= nearest + NEAREST_SLACK_MINUTES]
+    return _pick_distinct_airlines(near_window, max_results), False

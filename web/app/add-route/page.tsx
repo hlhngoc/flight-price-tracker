@@ -3,7 +3,7 @@
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useState, type FormEvent } from "react";
-import { TIME_WINDOW_PRESETS } from "@/lib/timeWindows";
+import TimeWindowPicker from "@/app/components/TimeWindowPicker";
 
 const DEFAULT_RANGE_DAYS = 4;
 
@@ -138,14 +138,7 @@ export default function AddRoutePage() {
         </div>
         <label>
           Khung giờ mong muốn (tùy chọn)
-          <select value={timeWindow} onChange={(e) => setTimeWindow(e.target.value)}>
-            <option value="">Không ưu tiên — giá rẻ nhất bất kể giờ nào</option>
-            {TIME_WINDOW_PRESETS.map((w) => (
-              <option key={w} value={w}>
-                {w}
-              </option>
-            ))}
-          </select>
+          <TimeWindowPicker value={timeWindow} onChange={setTimeWindow} />
         </label>
         {error && <p className="error">{error}</p>}
         <button type="submit" disabled={submitting}>

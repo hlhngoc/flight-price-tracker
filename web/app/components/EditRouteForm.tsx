@@ -4,8 +4,8 @@ import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useState, type FormEvent } from "react";
 import { formatDmy } from "@/lib/dateFormat";
-import { TIME_WINDOW_PRESETS } from "@/lib/timeWindows";
 import type { RouteDoc } from "@/lib/types";
+import TimeWindowPicker from "./TimeWindowPicker";
 
 export default function EditRouteForm({ route, onSuccess }: { route: RouteDoc; onSuccess?: () => void }) {
   const router = useRouter();
@@ -132,14 +132,7 @@ export default function EditRouteForm({ route, onSuccess }: { route: RouteDoc; o
           )}
           <label>
             Khung giờ mong muốn (tùy chọn)
-            <select value={timeWindow} onChange={(e) => setTimeWindow(e.target.value)}>
-              <option value="">Không ưu tiên — giá rẻ nhất bất kể giờ nào</option>
-              {TIME_WINDOW_PRESETS.map((w) => (
-                <option key={w} value={w}>
-                  {w}
-                </option>
-              ))}
-            </select>
+            <TimeWindowPicker value={timeWindow} onChange={setTimeWindow} />
           </label>
         </>
       )}
